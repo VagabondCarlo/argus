@@ -1,0 +1,122 @@
+import sqlite3
+import os
+from datetime import datetime, date
+from contextlib import contextmanager
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "argus.db")
+
+
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    with get_conn() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS signals (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker      TEXT NOT NULL,
+                action      TEXT NOT NULL,
+                confidence  REAL NOT NULL,
+                price_target REAL,
+                stop_loss   REAL,
+                reasoning   TEXT,
+                generated_at TEXT NOT NULL,
+                executed    INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS trades (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id   INTEGER REFERENCES signals(id),
+                order_id    TEXT,
+                fill_price  REAL,
+                quantity    REAL,
+                executed_at TEXT,
+                closed_at   TEXT,
+                close_price REAL,
+                pnl         REAL,
+                status      TEXT DEFAULT 'open'
+            );
+
+            CREATE TABLE IF NOT EXISTS daily_stats (
+                trade_date       TEXT PRIMARY KEY,
+                signals_analyzed INTEGER DEFAULT 0,
+                signals_executed INTEGER DEFAULT 0,
+                signals_rejected INTEGER DEFAULT 0,
+                total_pnl        REAL DEFAULT 0.0,
+                wins             INTEGER DEFAULT 0,
+                losses           INTEGER DEFAULT 0
+            );
+        """)
+
+
+@contextmanager
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_signal(ticker, action, confidence, price_target, stop_loss, reasoning):
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO signals (ticker, action, confidence, price_target, stop_loss, reasoning, generated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (ticker, action, confidence, price_target, stop_loss, reasoning,
+              datetime.utcnow().isoformat()))
+
+
+def get_todays_signals(min_confidence=0.0):
+    today = date.today().isoformat()
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT * FROM signals
+            WHERE date(generated_at) = ?
+            AND confidence >= ?
+            ORDER BY confidence DESC
+        """, (today, min_confidence)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_todays_trades():
+    today = date.today().isoformat()
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT t.*, s.ticker, s.action, s.reasoning
+            FROM trades t
+            JOIN signals s ON t.signal_id = s.id
+            WHERE date(t.executed_at) = ?
+            ORDER BY t.executed_at DESC
+        """, (today,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_trade_history(limit=10):
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT t.*, s.ticker, s.action
+            FROM trades t
+            JOIN signals s ON t.signal_id = s.id
+            WHERE t.status = 'closed'
+            ORDER BY t.closed_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_todays_stats():
+    today = date.today().isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM daily_stats WHERE trade_date = ?", (today,)
+        ).fetchone()
+    return dict(row) if row else {
+        "trade_date": today,
+        "signals_analyzed": 0,
+        "signals_executed": 0,
+        "signals_rejected": 0,
+        "total_pnl": 0.0,
+        "wins": 0,
+        "losses": 0,
+    }

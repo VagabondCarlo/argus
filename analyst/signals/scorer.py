@@ -6,7 +6,7 @@ from analyst.data.universe import get_core_universe, get_full_universe
 from analyst.data.screener import run_prescreen, filter_by_market_regime
 from analyst.data.market import get_market_snapshot
 from analyst.data.news import fetch_news, format_news_for_prompt
-from analyst.sentiment.analyzer import analyze_ticker
+from analyst.sentiment.analyzer import analyze_ticker, get_spy_context
 from shared.database import save_signal, get_todays_signals, get_conn
 from shared.config import config
 from notifications.bot import send_sync_notification
@@ -86,19 +86,8 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         logger.info("No candidates passed pre-screen.")
         return []
 
-    # Step 3: Market regime filter
-    spy_change = candidates[0].get("spy_change", 0.0) if candidates else 0.0
-    try:
-        import yfinance as yf
-        spy = yf.download("SPY", period="2d", interval="1d",
-                          progress=False, auto_adjust=True)
-        if len(spy) >= 2:
-            spy_change = float(
-                (spy["Close"].iloc[-1] - spy["Close"].iloc[-2]) / spy["Close"].iloc[-2] * 100
-            )
-    except Exception:
-        spy_change = 0.0
-
+    # Step 3: Fetch SPY context once — used for regime filter AND passed into every LLM call
+    spy_change, market_regime = get_spy_context()
     candidates = filter_by_market_regime(candidates, spy_change)
     logger.info(f"Analyzing {len(candidates)} candidates (SPY: {spy_change:+.1f}%)")
 
@@ -115,7 +104,7 @@ def run_scan(full_universe: bool = False) -> list[dict]:
 
         news = fetch_news(ticker)
         news_text = format_news_for_prompt(news)
-        signal = analyze_ticker(snapshot, news_text)
+        signal = analyze_ticker(snapshot, news_text, spy_change=spy_change, market_regime=market_regime)
 
         if signal is None:
             continue

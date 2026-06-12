@@ -1,6 +1,6 @@
 import logging
 import httpx
-import asyncio
+import functools
 from datetime import time
 from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -33,6 +33,7 @@ def is_owner(update: Update) -> bool:
 
 def owner_only(func):
     """Silently drops any message not from the authorized owner."""
+    @functools.wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_owner(update):
             logger.warning(f"Unauthorized command attempt from chat_id={update.effective_chat.id}")

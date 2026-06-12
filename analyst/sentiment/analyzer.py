@@ -91,14 +91,14 @@ def get_spy_context() -> tuple[float, str]:
     return 0.0, "unknown"
 
 
-def analyze_ticker(snapshot: dict, news_text: str) -> dict | None:
+def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, market_regime: str = "unknown") -> dict | None:
     """
     Send a ticker snapshot + news to Marcus Reed (the veteran LLM persona).
+    spy_change and market_regime are passed in from the scan loop (fetched once per scan).
     Returns a structured signal dict, or None on failure.
     """
     rsi = snapshot["rsi"]
     bb_pct = snapshot.get("bb_pct", 0.5)
-    spy_change, market_regime = get_spy_context()
 
     rsi_context = (
         "⚠️ OVERBOUGHT — avoid new longs" if rsi > 75 else

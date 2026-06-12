@@ -1,29 +1,36 @@
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, TrailingStopOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
+from alpaca.trading.requests import MarketOrderRequest, StopOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestQuoteRequest
 from shared.config import config
-from shared.database import get_todays_trades
+from shared.database import get_conn
 import logging
+from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
-trading = TradingClient(
-    config.ALPACA_API_KEY,
-    config.ALPACA_SECRET_KEY,
-    paper=True
-)
+_trading = None
+_data_client = None
 
-data_client = StockHistoricalDataClient(
-    config.ALPACA_API_KEY,
-    config.ALPACA_SECRET_KEY
-)
+
+def _get_trading():
+    global _trading
+    if _trading is None:
+        _trading = TradingClient(config.ALPACA_API_KEY, config.ALPACA_SECRET_KEY, paper=True)
+    return _trading
+
+
+def _get_data_client():
+    global _data_client
+    if _data_client is None:
+        _data_client = StockHistoricalDataClient(config.ALPACA_API_KEY, config.ALPACA_SECRET_KEY)
+    return _data_client
 
 
 def get_account():
     try:
-        acct = trading.get_account()
+        acct = _get_trading().get_account()
         return {
             "cash": float(acct.cash),
             "portfolio_value": float(acct.portfolio_value),
@@ -38,7 +45,7 @@ def get_account():
 def get_latest_price(ticker: str) -> float | None:
     try:
         req = StockLatestQuoteRequest(symbol_or_symbols=ticker)
-        quote = data_client.get_stock_latest_quote(req)
+        quote = _get_data_client().get_stock_latest_quote(req)
         return float(quote[ticker].ask_price)
     except Exception as e:
         logger.error(f"Failed to get price for {ticker}: {e}")
@@ -47,7 +54,7 @@ def get_latest_price(ticker: str) -> float | None:
 
 def get_open_positions():
     try:
-        positions = trading.get_all_positions()
+        positions = _get_trading().get_all_positions()
         return [
             {
                 "ticker": p.symbol,
@@ -65,27 +72,28 @@ def get_open_positions():
 
 def place_order(ticker: str, side: str, qty: float, stop_loss_price: float) -> dict:
     try:
+        client = _get_trading()
         order_side = OrderSide.BUY if side == "BUY" else OrderSide.SELL
 
-        # Entry order
-        order = trading.submit_order(MarketOrderRequest(
+        # Entry market order
+        order = client.submit_order(MarketOrderRequest(
             symbol=ticker,
             qty=qty,
             side=order_side,
             time_in_force=TimeInForce.DAY
         ))
-
         logger.info(f"Order placed: {side} {qty} {ticker} | ID: {order.id}")
 
-        # Attach stop-loss
-        if side == "BUY":
-            trading.submit_order(TrailingStopOrderRequest(
-                symbol=ticker,
-                qty=qty,
-                side=OrderSide.SELL,
-                time_in_force=TimeInForce.GTC,
-                trail_price=str(round(stop_loss_price, 2))
-            ))
+        # Protective stop-loss order (opposite side)
+        stop_side = OrderSide.SELL if side == "BUY" else OrderSide.BUY
+        client.submit_order(StopOrderRequest(
+            symbol=ticker,
+            qty=qty,
+            side=stop_side,
+            time_in_force=TimeInForce.GTC,
+            stop_price=round(stop_loss_price, 2)
+        ))
+        logger.info(f"Stop-loss set at ${stop_loss_price:.2f} for {ticker}")
 
         return {
             "order_id": str(order.id),
@@ -100,7 +108,7 @@ def place_order(ticker: str, side: str, qty: float, stop_loss_price: float) -> d
 
 def close_position(ticker: str) -> dict:
     try:
-        trading.close_position(ticker)
+        _get_trading().close_position(ticker)
         return {"closed": ticker}
     except Exception as e:
         logger.error(f"Failed to close {ticker}: {e}")
@@ -109,7 +117,7 @@ def close_position(ticker: str) -> dict:
 
 def close_all_positions() -> list:
     try:
-        trading.close_all_positions(cancel_orders=True)
+        _get_trading().close_all_positions(cancel_orders=True)
         return {"closed": "all"}
     except Exception as e:
         logger.error(f"Failed to close all positions: {e}")
@@ -117,5 +125,11 @@ def close_all_positions() -> list:
 
 
 def trades_this_week() -> int:
-    trades = get_todays_trades()
-    return len(trades)
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM trades WHERE date(executed_at) >= ?",
+            (monday.isoformat(),)
+        ).fetchone()
+    return row["cnt"] if row else 0

@@ -97,11 +97,10 @@ def guest_welcome() -> str:
         "I'm an autonomous AI trading system that scans the entire market in real-time "
         "using local language models, technical analysis, and live news feeds.\n\n"
         "Built and operated by a private trader. Paper trading mode — all signals are live analysis.\n\n"
-        "*What I can show you:*\n\n"
-        "📈 *Predictions* — Today's highest-confidence trade reads\n"
-        "💡 *Suggestions* — Full setups with entry, stop-loss, and target\n"
-        "🔥 *High Probability Setups* — Only signals at 65%+ confidence\n\n"
-        "Tap a button below to get started."
+        "*Available commands:*\n\n"
+        "/predictions — Today's highest-confidence trade reads\n"
+        "/suggestions — Full setups with entry, stop-loss, and target\n"
+        "/setups — Only signals at 65%+ confidence\n"
     )
 
 

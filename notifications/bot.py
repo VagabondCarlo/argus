@@ -308,21 +308,28 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Cancelled.")
 
 
+# ── Guest commands ─────────────────────────────────────────────────────────────
+
+async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    signals = get_todays_signals(min_confidence=0.60)
+    await update.message.reply_text(guest_predictions(signals), parse_mode="Markdown")
+
+
+async def cmd_suggestions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    signals = get_todays_signals(min_confidence=0.60)
+    await update.message.reply_text(guest_suggestions(signals), parse_mode="Markdown")
+
+
+async def cmd_setups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    signals = get_todays_signals(min_confidence=0.60)
+    await update.message.reply_text(guest_high_probability(signals), parse_mode="Markdown")
+
+
 # ── Guest handler ──────────────────────────────────────────────────────────────
 
 async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles all messages from non-owner users — guest experience."""
-    keyboard = [[
-        InlineKeyboardButton("📈 Predictions", callback_data="guest_predictions"),
-        InlineKeyboardButton("💡 Suggestions", callback_data="guest_suggestions"),
-    ], [
-        InlineKeyboardButton("🔥 High Probability Setups", callback_data="guest_high_prob"),
-    ]]
-    await update.message.reply_text(
-        guest_welcome(),
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(guest_welcome(), parse_mode="Markdown")
 
 
 # ── Unknown command fallback ───────────────────────────────────────────────────
@@ -362,6 +369,11 @@ def run_bot():
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("threshold", cmd_threshold))
     app.add_handler(CommandHandler("config", cmd_config))
+
+    # Guest commands (open to everyone)
+    app.add_handler(CommandHandler("predictions", cmd_predictions))
+    app.add_handler(CommandHandler("suggestions", cmd_suggestions))
+    app.add_handler(CommandHandler("setups", cmd_setups))
 
     # Callbacks (owner + guest)
     app.add_handler(CallbackQueryHandler(callback_handler))

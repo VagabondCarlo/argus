@@ -101,6 +101,7 @@ def guest_welcome() -> str:
         "/predictions — Today's highest-confidence trade reads\n"
         "/suggestions — Full setups with entry, stop-loss, and target\n"
         "/setups — Only signals at 65%+ confidence\n"
+        "/news — Top 3 market-moving headlines right now\n"
     )
 
 

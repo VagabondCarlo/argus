@@ -17,6 +17,7 @@ from notifications.reports import (
     premarket_report, midday_report, aftermarket_report,
     guest_welcome, guest_predictions, guest_suggestions, guest_high_probability
 )
+from analyst.data.market_news import get_market_news, format_news_report
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -310,6 +311,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Guest commands ─────────────────────────────────────────────────────────────
 
+async def cmd_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Fetching top market headlines...", parse_mode="HTML")
+    articles = get_market_news(max_articles=3)
+    await update.message.reply_text(format_news_report(articles), parse_mode="HTML", disable_web_page_preview=True)
+
+
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_predictions(signals), parse_mode="Markdown")
@@ -371,6 +378,7 @@ def run_bot():
     app.add_handler(CommandHandler("config", cmd_config))
 
     # Guest commands (open to everyone)
+    app.add_handler(CommandHandler("news", cmd_news))
     app.add_handler(CommandHandler("predictions", cmd_predictions))
     app.add_handler(CommandHandler("suggestions", cmd_suggestions))
     app.add_handler(CommandHandler("setups", cmd_setups))

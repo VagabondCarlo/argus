@@ -13,6 +13,9 @@ class Config:
     # Telegram
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    # Broadcast channels (Mike must create these and add the bot as admin)
+    TIER1_CHANNEL_ID = os.getenv("TIER1_CHANNEL_ID", "")   # free public channel
+    TIER2_CHANNEL_ID = os.getenv("TIER2_CHANNEL_ID", "")   # paid private channel
 
     # News
     NEWS_API_KEY = os.getenv("NEWS_API_KEY")

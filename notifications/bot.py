@@ -110,6 +110,21 @@ async def job_aftermarket_report(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def job_daily_broadcast(context: ContextTypes.DEFAULT_TYPE):
+    """9 AM ET — multi-asset broadcast to Tier 1 and Tier 2 channels."""
+    from analyst.signals.broadcaster import run_broadcast
+    tier1 = config.TIER1_CHANNEL_ID
+    tier2 = config.TIER2_CHANNEL_ID
+    if not tier1 and not tier2:
+        logger.warning("No channel IDs configured — skipping broadcast")
+        return
+    try:
+        total = await run_broadcast(context.bot, tier1, tier2)
+        logger.info(f"Daily broadcast complete: {total} signals published")
+    except Exception as e:
+        logger.error(f"Daily broadcast failed: {e}")
+
+
 # ── Owner commands ─────────────────────────────────────────────────────────────
 
 @owner_only
@@ -543,11 +558,14 @@ def run_bot():
 
     # Schedule daily reports (ET timezone)
     jq = app.job_queue
-    jq.run_daily(job_premarket_report,  time=time(8, 30, tzinfo=ET),  days=(0, 1, 2, 3, 4))
-    jq.run_daily(job_midday_report,     time=time(12, 30, tzinfo=ET), days=(0, 1, 2, 3, 4))
+    jq.run_daily(job_premarket_report,   time=time(8, 30, tzinfo=ET),  days=(0, 1, 2, 3, 4))
+    jq.run_daily(job_midday_report,      time=time(12, 30, tzinfo=ET), days=(0, 1, 2, 3, 4))
     jq.run_daily(job_aftermarket_report, time=time(16, 30, tzinfo=ET), days=(0, 1, 2, 3, 4))
 
-    logger.info("Argus bot started — 3 daily reports scheduled (ET), guest mode active")
+    # Daily multi-asset broadcast — 9 AM ET every day (forex/crypto trade on weekends too)
+    jq.run_daily(job_daily_broadcast, time=time(9, 0, tzinfo=ET), days=(0, 1, 2, 3, 4, 5, 6))
+
+    logger.info("Argus bot started — 3 daily reports + 9 AM multi-asset broadcast scheduled (ET)")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

@@ -146,23 +146,55 @@ def run_scan(full_universe: bool = False) -> list[dict]:
             f"R/R={risk_reward:.1f} | {signal.get('setup_type','')}"
         )
 
-    # Step 6: Notify on actionable signals
-    actionable = [s for s in new_signals if s["confidence"] >= config.CONFIDENCE_THRESHOLD]
+    # Step 6: Route signals by confidence tier
+    import httpx
 
-    if actionable:
-        lines = [f"🔵 *{len(actionable)} trade signal(s) ready*\n"]
-        for s in actionable:
+    above_threshold = [s for s in new_signals if s["confidence"] >= config.CONFIDENCE_THRESHOLD]
+    audit_candidates = [
+        s for s in new_signals
+        if 0.70 <= s["confidence"] < config.CONFIDENCE_THRESHOLD
+    ]
+
+    # Signals above 75% — notify immediately, executor polls and executes
+    if above_threshold:
+        lines = [f"🔵 *{len(above_threshold)} signal(s) above threshold*\n"]
+        for s in above_threshold:
             rr = s.get("risk_reward", 0)
             lines.append(
-                f"*{s['ticker']}* {s['action']} — {s['confidence']:.0%} confidence\n"
+                f"*{s['ticker']}* {s['action']} — {s['confidence']:.0%}\n"
                 f"Target: ${s['price_target']:.2f} | Stop: ${s['stop_loss']:.2f} | R/R: {rr:.1f}x\n"
-                f"Setup: {s.get('setup_type','')}\n"
                 f"_{s['reasoning'][:120]}_\n"
             )
         send_sync_notification("\n".join(lines))
 
+    # Signals at 70-75% — forward to executor for independent audit
+    for s in audit_candidates:
+        logger.info(f"Forwarding {s['ticker']} ({s['confidence']:.0%}) to executor audit")
+        send_sync_notification(
+            f"🔎 *Sending to Risk Desk: {s['ticker']}*\n"
+            f"Analyst scored {s['confidence']:.0%} — executor auditing for final approval"
+        )
+        try:
+            httpx.post(
+                f"http://{config.EXECUTOR_HOST}:{config.EXECUTOR_PORT}/audit",
+                json={
+                    "ticker": s["ticker"],
+                    "action": s["action"],
+                    "confidence": s["confidence"],
+                    "price_target": s.get("price_target", 0),
+                    "stop_loss": s.get("stop_loss", 0),
+                    "risk_reward": s.get("risk_reward", 0),
+                    "setup_type": s.get("setup_type", "unknown"),
+                    "reasoning": s.get("reasoning", ""),
+                    "red_flags": s.get("red_flags", "none"),
+                },
+                timeout=120,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send {s['ticker']} to executor audit: {e}")
+
     logger.info(
         f"Scan done: {len(new_signals)} signals saved, "
-        f"{len(actionable)} above {config.CONFIDENCE_THRESHOLD:.0%} threshold"
+        f"{len(above_threshold)} above threshold, {len(audit_candidates)} sent to audit"
     )
     return new_signals

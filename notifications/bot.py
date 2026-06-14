@@ -336,7 +336,53 @@ async def cmd_setups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles all messages from non-owner users — guest experience."""
-    await update.message.reply_text(guest_welcome(), parse_mode="Markdown")
+    user_text = update.message.text or ""
+
+    # First message or a command-style opener — show welcome
+    if not user_text or user_text.startswith("/"):
+        await update.message.reply_text(guest_welcome(), parse_mode="Markdown")
+        return
+
+    # Free-text message — run through the guest conversational LLM
+    try:
+        signals = get_todays_signals(min_confidence=0.60)
+        signal_summary = (
+            f"{len(signals)} signals generated today. "
+            f"Highest confidence: {max((s['confidence'] for s in signals), default=0):.0%}."
+            if signals else "No signals generated yet today."
+        )
+
+        import ollama
+        response = ollama.chat(
+            model="llama3.1:8b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Argus, an autonomous AI trading system. "
+                        "You speak to the public as a knowledgeable but disciplined market analyst. "
+                        "You ONLY discuss topics related to trading, markets, stocks, investing, "
+                        "technical analysis, market news, and financial concepts. "
+                        "If the user asks about ANYTHING else — sports, politics, weather, personal advice, "
+                        "entertainment, or any non-trading topic — you politely decline and redirect them "
+                        "back to what you do: finding high-probability trades. "
+                        "Keep responses under 4 sentences. Be direct and confident. "
+                        "Never give specific financial advice or tell anyone to buy or sell a specific stock. "
+                        "Current system context: " + signal_summary
+                    )
+                },
+                {"role": "user", "content": user_text}
+            ],
+            options={"temperature": 0.4}
+        )
+        reply = response["message"]["content"].strip()
+    except Exception:
+        reply = (
+            "I'm focused on one thing — finding high-probability trades. "
+            "Ask me about the market, today's signals, or use /predictions to see what I'm watching."
+        )
+
+    await update.message.reply_text(reply)
 
 
 # ── Owner conversational handler ───────────────────────────────────────────────

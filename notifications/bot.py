@@ -339,6 +339,51 @@ async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(guest_welcome(), parse_mode="Markdown")
 
 
+# ── Owner conversational handler ───────────────────────────────────────────────
+
+@owner_only
+async def owner_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Let Mike have a natural conversation with Argus about the system."""
+    user_text = update.message.text.strip()
+
+    try:
+        stats = get_todays_stats()
+        signals = get_todays_signals(min_confidence=0.60)
+        analyst = await _get_analyst_status()
+        executor = await _get_executor_status()
+
+        system_context = (
+            f"Signals today: {stats['signals_analyzed']} analyzed, "
+            f"{stats['signals_executed']} executed, P&L: ${stats['total_pnl']:.2f}. "
+            f"Analyst: {'online' if 'error' not in analyst else 'offline'}. "
+            f"Executor: {'online' if 'error' not in executor else 'offline'}. "
+            f"Active signals: {len(signals)}."
+        )
+
+        import ollama
+        response = ollama.chat(
+            model="llama3.1:8b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Argus, an autonomous AI trading system. "
+                        "You speak directly and confidently like a trading desk assistant. "
+                        "Keep responses under 3 sentences. No fluff. "
+                        "Current system state: " + system_context
+                    )
+                },
+                {"role": "user", "content": user_text}
+            ],
+            options={"temperature": 0.3}
+        )
+        reply = response["message"]["content"].strip()
+    except Exception:
+        reply = "System is running. Use /status for a full readout."
+
+    await update.message.reply_text(reply)
+
+
 # ── Unknown command fallback ───────────────────────────────────────────────────
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -385,6 +430,12 @@ def run_bot():
 
     # Callbacks (owner + guest)
     app.add_handler(CallbackQueryHandler(callback_handler))
+
+    # Owner plain-text chat handler
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.User(user_id=AUTHORIZED_CHAT_ID) & ~filters.COMMAND,
+        owner_chat
+    ))
 
     # Guest handler — catches all messages from non-owners
     app.add_handler(MessageHandler(

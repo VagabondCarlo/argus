@@ -105,8 +105,8 @@ def format_tier1_broadcast(
     market_regime: str,
 ) -> str:
     """
-    Clean, concise format for the free public channel.
-    Just the pick, direction, and confidence — no levels.
+    Free public channel — one pick per asset class, second-best signal.
+    The top pick is reserved for Tier 2 (paid). Clear upgrade path shown.
     """
     today = datetime.now(ET).strftime("%A, %B %d %Y")
     lines = [
@@ -123,28 +123,34 @@ def format_tier1_broadcast(
         ("crypto", crypto),
     ]
 
+    has_any = False
     for asset_type, picks in sections:
-        top3 = picks[:3]
-        if not top3:
-            lines.append(f"{_asset_emoji(asset_type)} <b>{_section_header(asset_type)}</b>")
-            lines.append("  No high-conviction setups today.")
-            lines.append("")
-            continue
+        # Index [1] = second-most-confident pick; [0] is reserved for Pro
+        pick = picks[1] if len(picks) >= 2 else (picks[0] if picks else None)
 
         lines.append(f"{_asset_emoji(asset_type)} <b>{_section_header(asset_type)}</b>")
-        for i, s in enumerate(top3, 1):
-            name = s.get("display_name", s["ticker"])
-            conf = s["confidence"]
-            action = s["action"]
+
+        if not pick:
+            lines.append("  No setup today.")
+        else:
+            has_any = True
+            name = pick.get("display_name", pick["ticker"])
+            conf = pick["confidence"]
+            action = pick["action"]
             lines.append(
-                f"  {i}. {_action_emoji(action)} <b>{name}</b> — {action} | {conf:.0%}"
+                f"  {_action_emoji(action)} <b>{name}</b> — {action} | {conf:.0%}"
             )
         lines.append("")
 
     lines += [
-        "─────────────────────────",
-        "📊 <b>Full analysis, entry prices, targets,",
-        "stops, and R/R ratios → Argus Pro</b>",
+        "─────────────────────────────",
+        "🔒 <b>Today's #1 pick in each class + full",
+        "entry/stop/target levels are in Argus Pro.</b>",
+        "",
+        "Every day. Every asset class.",
+        "Same intelligence the institutions use.",
+        "",
+        "📩 <b>DM @ArgusVagabondBot to upgrade.</b>",
         "",
         "<i>⚠️ Educational signals only. Not financial advice.</i>",
     ]

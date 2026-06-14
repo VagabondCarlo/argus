@@ -18,6 +18,7 @@ from analyst.sentiment.analyzer import get_spy_context
 from analyst.data.market import get_market_snapshot
 from analyst.data.news import fetch_news, format_news_for_prompt
 from analyst.sentiment.analyzer import analyze_ticker
+from analyst.signals.execution import format_execution_tier1, format_execution_tier2
 
 logger = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
@@ -150,6 +151,9 @@ def format_tier1_broadcast(
             lines.append(
                 f"  {_action_emoji(action)} <b>{name}</b> — {action} | {conf:.0%}"
             )
+            hint = format_execution_tier1(pick)
+            if hint:
+                lines.append(f"  {hint}")
         lines.append("")
 
     lines += [
@@ -232,6 +236,8 @@ def format_tier2_broadcast(
             target_fmt = f"{target:.4f}" if asset_type == "forex" else f"{target:.2f}"
             stop_fmt = f"{stop:.4f}" if asset_type == "forex" else f"{stop:.2f}"
 
+            execution_block = format_execution_tier2(s)
+
             lines += [
                 f"\n{_action_emoji(action)} <b>{name} — {action}</b>",
                 f"Confidence: <b>{conf:.0%}</b>  {_conf_bar(conf)}",
@@ -242,6 +248,8 @@ def format_tier2_broadcast(
             ]
             if red_flags and red_flags.lower() != "none":
                 lines.append(f"⚠️ <i>{red_flags}</i>")
+            if execution_block:
+                lines.append(f"\n{execution_block}")
             lines.append("")
 
     lines += [

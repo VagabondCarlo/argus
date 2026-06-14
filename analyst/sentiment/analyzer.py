@@ -56,31 +56,35 @@ TICKER: {ticker}
 CURRENT PRICE: ${price}
 TODAY'S MOVE: {price_change_pct}% | Volume: {volume_ratio}x normal
 
-TECHNICAL PICTURE (Marcus Reed):
+TECHNICAL PICTURE:
 - RSI (14): {rsi}  {rsi_context}
 - MACD Cross: {macd_cross} | MACD Diff: {macd_diff}
 - Bollinger Band position: {bb_pct_label} ({bb_pct})
 - EMA 9 vs EMA 21: {ema_trend}
 - Volume vs 20-day avg: {volume_ratio}x
 
-MACRO CONTEXT (Ray Dalio):
+MACRO CONTEXT:
 - SPY today: {spy_change}%
 - Market regime: {market_regime}
 
-NEWS & CATALYSTS (Warren Buffett):
+FUNDAMENTAL & INSIDER INTELLIGENCE:
+{enrichment}
+
+NEWS & CATALYSTS:
 {news}
 
 COMMITTEE CHECKLIST before scoring above 0.75:
-  Buffett filter — Is this a quality business at a fair/fearful price, not peak greed?
-  Dalio filter  — Does the macro regime and SPY direction support this trade?
-  Reed filter   — Is R/R ≥ 2:1 with volume confirmation and a clean technical entry?
+  Fundamental filter — Quality business at a fair/fearful price? Insiders buying or selling?
+  Macro filter      — Does the regime and SPY direction support this trade?
+  Technical filter  — Is R/R ≥ 2:1 with volume confirmation and a clean entry?
 
 Hard stops — these auto-veto a BUY signal:
-- RSI > 75 (overbought — Buffett says do not chase greed)
-- Volume ratio < 1.3 (Reed says no confirmation)
-- SPY down > 1% and this is a BUY (Dalio says don't fight the tape)
+- RSI > 75 (overbought — do not chase)
+- Volume ratio < 1.3 (no confirmation)
+- SPY down > 1% and this is a BUY (don't fight the tape)
 - RSI < 25 on a SHORT (oversold — wait for confirmation)
 - Negative news on a BUY reduces confidence by at least 0.10
+- Earnings within 7 days — cap confidence at 0.65 (binary risk event)
 
 Return ONLY this JSON, nothing else:
 {{
@@ -119,10 +123,10 @@ def get_spy_context() -> tuple[float, str]:
     return 0.0, "unknown"
 
 
-def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, market_regime: str = "unknown") -> dict | None:
+def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, market_regime: str = "unknown", enrichment_text: str = "") -> dict | None:
     """
-    Send a ticker snapshot + news to Marcus Reed (the veteran LLM persona).
-    spy_change and market_regime are passed in from the scan loop (fetched once per scan).
+    Send a ticker snapshot + news + enrichment data to the three-committee LLM.
+    enrichment_text contains insider activity, analyst consensus, earnings proximity, short interest.
     Returns a structured signal dict, or None on failure.
     """
     rsi = snapshot["rsi"]
@@ -156,6 +160,7 @@ def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, mark
         ema_trend=snapshot["ema_trend"],
         spy_change=spy_change,
         market_regime=market_regime,
+        enrichment=enrichment_text or "No enrichment data available.",
         news=news_text,
     )
 

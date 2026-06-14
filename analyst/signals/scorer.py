@@ -6,6 +6,7 @@ from analyst.data.universe import get_core_universe, get_full_universe
 from analyst.data.screener import run_prescreen, filter_by_market_regime
 from analyst.data.market import get_market_snapshot
 from analyst.data.news import fetch_news, format_news_for_prompt
+from analyst.data.web_scraper import get_full_enrichment
 from analyst.sentiment.analyzer import analyze_ticker, get_spy_context
 from shared.database import save_signal, get_todays_signals, get_conn
 from shared.config import config
@@ -104,7 +105,23 @@ def run_scan(full_universe: bool = False) -> list[dict]:
 
         news = fetch_news(ticker)
         news_text = format_news_for_prompt(news)
-        signal = analyze_ticker(snapshot, news_text, spy_change=spy_change, market_regime=market_regime)
+
+        enrichment = get_full_enrichment(ticker)
+        enrichment_text = enrichment.get("llm_context", "")
+
+        signal = analyze_ticker(
+            snapshot, news_text,
+            spy_change=spy_change,
+            market_regime=market_regime,
+            enrichment_text=enrichment_text,
+        )
+
+        # Hard cap: earnings within 7 days kills confidence to ≤ 0.65
+        if signal and enrichment.get("earnings_risk"):
+            if signal.get("confidence", 0) > 0.65:
+                signal["confidence"] = 0.65
+                signal["red_flags"] = (signal.get("red_flags") or "") + " | Earnings within 7 days — confidence capped"
+                logger.info(f"Earnings risk cap applied to {ticker}")
 
         if signal is None:
             continue

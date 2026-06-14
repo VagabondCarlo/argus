@@ -144,6 +144,16 @@ def format_tier1_broadcast(
 
     lines += [
         "─────────────────────────────",
+        "📊 <b>What does the % mean?</b>",
+        "",
+        "That's Argus's confidence score — calculated by our",
+        "three-committee AI framework (macro analysis, fundamentals,",
+        "and technical execution). A 74% means 3 independent models",
+        "ran this setup and agreed it has a real edge.",
+        "<b>We are not financial advisors. Do your own research.",
+        "These are our calculations — trade at your own risk.</b>",
+        "",
+        "─────────────────────────────",
         "🔒 <b>Today's #1 pick in each class + full",
         "entry/stop/target levels are in Argus Pro.</b>",
         "",
@@ -151,8 +161,6 @@ def format_tier1_broadcast(
         "Same intelligence the institutions use.",
         "",
         "📩 <b>DM @ArgusVagabondBot to upgrade.</b>",
-        "",
-        "<i>⚠️ Educational signals only. Not financial advice.</i>",
     ]
 
     return "\n".join(lines)

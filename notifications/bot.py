@@ -110,19 +110,20 @@ async def job_aftermarket_report(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def job_daily_broadcast(context: ContextTypes.DEFAULT_TYPE):
-    """9 AM ET — multi-asset broadcast to Tier 1 and Tier 2 channels."""
+async def job_broadcast(context: ContextTypes.DEFAULT_TYPE):
+    """Broadcast job — time_slot passed via context.job.data."""
     from analyst.signals.broadcaster import run_broadcast
     tier1 = config.TIER1_CHANNEL_ID
     tier2 = config.TIER2_CHANNEL_ID
     if not tier1 and not tier2:
         logger.warning("No channel IDs configured — skipping broadcast")
         return
+    time_slot = context.job.data or "morning"
     try:
-        total = await run_broadcast(context.bot, tier1, tier2)
-        logger.info(f"Daily broadcast complete: {total} signals published")
+        total = await run_broadcast(context.bot, tier1, tier2, time_slot=time_slot)
+        logger.info(f"{time_slot} broadcast complete: {total} signals published")
     except Exception as e:
-        logger.error(f"Daily broadcast failed: {e}")
+        logger.error(f"{time_slot} broadcast failed: {e}")
 
 
 # ── Owner commands ─────────────────────────────────────────────────────────────
@@ -562,10 +563,12 @@ def run_bot():
     jq.run_daily(job_midday_report,      time=time(12, 30, tzinfo=ET), days=(0, 1, 2, 3, 4))
     jq.run_daily(job_aftermarket_report, time=time(16, 30, tzinfo=ET), days=(0, 1, 2, 3, 4))
 
-    # Daily multi-asset broadcast — 9 AM ET every day (forex/crypto trade on weekends too)
-    jq.run_daily(job_daily_broadcast, time=time(9, 0, tzinfo=ET), days=(0, 1, 2, 3, 4, 5, 6))
+    # Multi-asset channel broadcasts — 3x daily, 7 days/week (forex & crypto never close)
+    jq.run_daily(job_broadcast, time=time(8, 15, tzinfo=ET),  days=(0,1,2,3,4,5,6), data="morning")
+    jq.run_daily(job_broadcast, time=time(12, 0, tzinfo=ET),  days=(0,1,2,3,4,5,6), data="midday")
+    jq.run_daily(job_broadcast, time=time(16, 30, tzinfo=ET), days=(0,1,2,3,4,5,6), data="aftermarket")
 
-    logger.info("Argus bot started — 3 daily reports + 9 AM multi-asset broadcast scheduled (ET)")
+    logger.info("Argus bot started — owner reports (ET weekdays) + channel broadcasts 8:15/12:00/16:30 ET daily")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

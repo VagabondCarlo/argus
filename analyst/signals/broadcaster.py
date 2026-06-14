@@ -1,9 +1,10 @@
 """
-Daily multi-asset broadcast engine.
-Scans 4 asset classes, picks top 3 from each, and sends to Tier 1 + Tier 2 channels.
+Multi-asset broadcast engine — 3x daily to Tier 1 and Tier 2 channels.
 
-Tier 1 (free, public): clean pick list — ticker, direction, confidence
-Tier 2 (paid, private): full analysis — entry, target, stop, R/R, committee reasoning
+Schedule (ET): 8:15 AM pre-market | 12:00 PM midday | 4:30 PM next-day preview
+
+Tier 1 (free, public): 1 pick per class (2nd best), confidence score, upgrade CTA
+Tier 2 (paid, private): top 3 per class, full entry/stop/target, committee reasoning
 """
 
 import logging
@@ -97,21 +98,30 @@ def _section_header(asset_type: str) -> str:
     }.get(asset_type, asset_type.upper())
 
 
+_SLOT_HEADERS = {
+    "morning":     ("🌅", "PRE-MARKET PICKS",      "Setups to watch at the 9:30 open"),
+    "midday":      ("☀️", "MIDDAY UPDATE",          "Live setups with fresh market data"),
+    "aftermarket": ("🌙", "NEXT DAY PREVIEW",       "What to watch for tomorrow's open"),
+}
+
+
 def format_tier1_broadcast(
     stocks: list[dict],
     forex: list[dict],
     metals: list[dict],
     crypto: list[dict],
     market_regime: str,
+    time_slot: str = "morning",
 ) -> str:
     """
     Free public channel — one pick per asset class, second-best signal.
     The top pick is reserved for Tier 2 (paid). Clear upgrade path shown.
     """
     today = datetime.now(ET).strftime("%A, %B %d %Y")
+    emoji, slot_title, slot_sub = _SLOT_HEADERS.get(time_slot, _SLOT_HEADERS["morning"])
     lines = [
-        f"🎯 <b>ARGUS DAILY SIGNALS</b>",
-        f"<i>{today}</i>",
+        f"{emoji} <b>ARGUS — {slot_title}</b>",
+        f"<i>{today}  ·  {slot_sub}</i>",
         f"Market: <b>{market_regime.split(' — ')[0].upper()}</b>",
         "",
     ]
@@ -173,6 +183,7 @@ def format_tier2_broadcast(
     crypto: list[dict],
     market_regime: str,
     spy_change: float,
+    time_slot: str = "morning",
 ) -> str:
     """
     Full analysis format for the paid private channel.
@@ -180,10 +191,11 @@ def format_tier2_broadcast(
     """
     today = datetime.now(ET).strftime("%A, %B %d %Y")
     regime_tag = market_regime.split(" — ")[0].upper()
+    emoji, slot_title, slot_sub = _SLOT_HEADERS.get(time_slot, _SLOT_HEADERS["morning"])
 
     lines = [
-        f"🎯 <b>ARGUS PRO — DAILY SIGNAL REPORT</b>",
-        f"<i>{today}</i>",
+        f"{emoji} <b>ARGUS PRO — {slot_title}</b>",
+        f"<i>{today}  ·  {slot_sub}</i>",
         f"Market regime: <b>{regime_tag}</b> | SPY: <b>{spy_change:+.2f}%</b>",
         "",
     ]
@@ -258,19 +270,18 @@ async def send_channel_message(bot, channel_id: str, text: str):
         logger.error(f"Failed to send to channel {channel_id}: {e}")
 
 
-async def run_broadcast(bot, tier1_channel: str, tier2_channel: str):
+async def run_broadcast(bot, tier1_channel: str, tier2_channel: str, time_slot: str = "morning"):
     """
     Full broadcast pipeline:
     1. Get SPY context
     2. Scan stocks, forex, metals, crypto concurrently
-    3. Format Tier 1 + Tier 2 messages
+    3. Format Tier 1 + Tier 2 messages with time-slot framing
     4. Send to both channels
     """
-    logger.info("Starting daily multi-asset broadcast scan...")
+    logger.info(f"Starting {time_slot} multi-asset broadcast scan...")
 
     spy_change, market_regime = get_spy_context()
 
-    # Scan all 4 asset classes concurrently using threads
     with ThreadPoolExecutor(max_workers=4) as ex:
         f_stocks = ex.submit(_scan_broadcast_stocks, spy_change, market_regime)
         f_forex = ex.submit(lambda: _scan_class(scan_forex(), spy_change, market_regime))
@@ -287,12 +298,12 @@ async def run_broadcast(bot, tier1_channel: str, tier2_channel: str):
         f"{len(metals)} metals, {len(crypto)} crypto signals"
     )
 
-    tier1_msg = format_tier1_broadcast(stocks, forex, metals, crypto, market_regime)
-    tier2_msg = format_tier2_broadcast(stocks, forex, metals, crypto, market_regime, spy_change)
+    tier1_msg = format_tier1_broadcast(stocks, forex, metals, crypto, market_regime, time_slot)
+    tier2_msg = format_tier2_broadcast(stocks, forex, metals, crypto, market_regime, spy_change, time_slot)
 
     await send_channel_message(bot, tier1_channel, tier1_msg)
     await send_channel_message(bot, tier2_channel, tier2_msg)
 
     total = sum(len(x[:3]) for x in [stocks, forex, metals, crypto])
-    logger.info(f"Daily broadcast complete — {total} signals sent to both channels")
+    logger.info(f"{time_slot.capitalize()} broadcast complete — {total} signals published")
     return total

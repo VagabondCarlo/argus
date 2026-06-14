@@ -12,7 +12,10 @@ from executor.gateway.alpaca import (
 from executor.risk.manager import (
     check_trade_allowed, calculate_position_size, calculate_stop_loss, get_weekly_trade_count
 )
+from executor.audit.auditor import run_audit
 from notifications.bot import send_sync_notification
+from analyst.data.market import get_market_snapshot
+from analyst.sentiment.analyzer import get_spy_context
 from datetime import datetime
 import time as time_module
 
@@ -48,7 +51,8 @@ def signal_watcher_loop():
 
 
 def process_pending_signals():
-    signals = get_todays_signals(min_confidence=config.CONFIDENCE_THRESHOLD)
+    # Pull signals in the 70-100% range — both audit candidates and direct executes
+    signals = get_todays_signals(min_confidence=0.70)
     actionable = [s for s in signals if not s["executed"]]
 
     if not actionable:
@@ -64,8 +68,41 @@ def process_pending_signals():
         logger.info(f"Trade blocked: {reason}")
         return
 
-    signal = actionable[0]  # Take highest confidence signal
-    execute_signal(signal, account)
+    spy_change, market_regime = get_spy_context()
+    weekly_trades = get_weekly_trade_count()
+
+    for signal in actionable:
+        conf = signal["confidence"]
+
+        # Signals already above threshold skip the audit and execute directly
+        if conf >= config.CONFIDENCE_THRESHOLD:
+            execute_signal(signal, account)
+            return
+
+        # Signals in the 70-75% zone go through the executor's independent audit
+        logger.info(f"Sending {signal['ticker']} to audit — analyst conf={conf:.0%}")
+        snapshot = get_market_snapshot(signal["ticker"])
+        if not snapshot:
+            logger.warning(f"No snapshot for audit: {signal['ticker']}")
+            continue
+
+        audit = run_audit(signal, snapshot, account, weekly_trades, spy_change, market_regime)
+
+        send_sync_notification(
+            f"🔍 *Audit Complete: {signal['ticker']}*\n\n"
+            f"Analyst: {conf:.0%} → Executor: {audit['audit_confidence']:.0%}\n"
+            f"Verdict: {'✅ APPROVED' if audit['approved'] else '❌ VETOED'}\n"
+            f"Timing: {audit.get('timing_verdict','—')}\n"
+            f"Counter-thesis: _{audit.get('counter_thesis','—')}_\n"
+            f"Notes: _{audit.get('audit_notes','—')[:120]}_"
+        )
+
+        if audit["approved"] and audit["audit_confidence"] >= config.CONFIDENCE_THRESHOLD:
+            signal["confidence"] = audit["audit_confidence"]
+            execute_signal(signal, account)
+            return
+        else:
+            logger.info(f"Audit blocked {signal['ticker']}: {audit.get('veto_reason','low confidence')}")
 
 
 def execute_signal(signal: dict, account: dict):
@@ -123,6 +160,47 @@ def execute_signal(signal: dict, account: dict):
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
+
+class AuditRequest(BaseModel):
+    ticker: str
+    action: str
+    confidence: float
+    price_target: float
+    stop_loss: float
+    risk_reward: float
+    setup_type: str = "unknown"
+    reasoning: str = ""
+    red_flags: str = "none"
+
+
+@app.post("/audit")
+def audit_signal(body: AuditRequest):
+    """Receive a signal from the Analyst and run the independent Risk Desk audit."""
+    signal = body.model_dump()
+    snapshot = get_market_snapshot(body.ticker)
+    if not snapshot:
+        return {"approved": False, "veto_reason": "Could not fetch market data"}
+
+    account = get_account() or {"cash": 0}
+    weekly_trades = get_weekly_trade_count()
+    spy_change, market_regime = get_spy_context()
+
+    result = run_audit(signal, snapshot, account, weekly_trades, spy_change, market_regime)
+
+    if result["approved"] and result["audit_confidence"] >= config.CONFIDENCE_THRESHOLD:
+        allowed, reason = check_trade_allowed(account.get("cash", 0))
+        if allowed:
+            signal["confidence"] = result["audit_confidence"]
+            execute_signal(signal, account)
+            result["executed"] = True
+        else:
+            result["executed"] = False
+            result["veto_reason"] = reason
+    else:
+        result["executed"] = False
+
+    return result
+
 
 @app.get("/status")
 def status():

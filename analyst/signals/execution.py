@@ -1,34 +1,36 @@
 """
 Execution suggestion engine.
 Given a signal (asset class, direction, time horizon, confidence),
-returns concrete "how to play this" options ranked by risk level.
-Rule-based — not LLM — for consistency and reliability.
+returns "how to play this" options ranked by risk level.
+
+All language is framed as suggestions — Argus is not a financial advisor.
+Rule-based, not LLM-generated, for consistency.
 """
 
 from dataclasses import dataclass
+
+_DYOR = "This is a suggestion only. Do your own research before making any decision."
 
 
 @dataclass
 class ExecutionOption:
     risk_level: str       # "conservative" | "moderate" | "aggressive"
     instrument: str       # short name of the vehicle
-    how: str              # one sentence — exactly what to do
-    note: str             # key risk or requirement
+    how: str              # suggestion — what some traders consider in this setup
+    note: str             # key risk or requirement + DYOR reminder
 
 
 def suggest_execution(signal: dict) -> list[ExecutionOption]:
     """
     Returns 2-3 execution options for a signal, ordered conservative → aggressive.
-    signal must include: asset_type, action, time_horizon, confidence, ticker
     """
-    asset_type  = signal.get("asset_type", "stock")
-    action      = signal.get("action", "BUY")
-    horizon     = signal.get("time_horizon", "1-2 days")
-    confidence  = signal.get("confidence", 0.75)
-    ticker      = signal.get("ticker", "")
+    asset_type = signal.get("asset_type", "stock")
+    action     = signal.get("action", "BUY")
+    horizon    = signal.get("time_horizon", "1-2 days")
+    ticker     = signal.get("ticker", "")
 
     if asset_type == "stock":
-        return _stock_suggestions(action, horizon, confidence, ticker)
+        return _stock_suggestions(action, horizon, ticker)
     elif asset_type == "forex":
         return _forex_suggestions(action, horizon, ticker)
     elif asset_type == "metal":
@@ -39,95 +41,95 @@ def suggest_execution(signal: dict) -> list[ExecutionOption]:
     return []
 
 
-# ── Stocks ──────────────────────────────────────────────────────────────────
+# ── Stocks ───────────────────────────────────────────────────────────────────
 
-_STOCK_ETF_MAP = {
-    "SPY": "SPY", "QQQ": "QQQ",
-}
-
-def _stock_suggestions(action: str, horizon: str, confidence: float, ticker: str) -> list[ExecutionOption]:
+def _stock_suggestions(action: str, horizon: str, ticker: str) -> list[ExecutionOption]:
     options = []
     is_intraday = "intraday" in horizon.lower()
     is_swing    = "week" in horizon.lower() or "3" in horizon
 
     if action == "BUY":
-        # Conservative: buy shares with a hard stop
         options.append(ExecutionOption(
             risk_level="conservative",
             instrument="Shares",
-            how=f"Buy {ticker} shares at market open. Set a hard stop at the stop price listed above.",
-            note="Lowest risk. No expiration. Requires enough capital to buy at least 1 share.",
+            how=(
+                f"Some traders in this setup consider taking a position in {ticker} shares "
+                "at or near the open, with a stop order placed at the stop price above "
+                "to limit downside automatically."
+            ),
+            note=f"Lowest risk approach — no expiration, no leverage. Requires enough capital for at least 1 share. {_DYOR}",
         ))
 
         if is_intraday:
-            # Aggressive: 0DTE call — intraday scalp
             options.append(ExecutionOption(
                 risk_level="aggressive",
-                instrument="0DTE Call Option",
+                instrument="0DTE Call Option (Same-Day Expiry)",
                 how=(
-                    f"Buy a same-day expiring (0DTE) ATM call on {ticker}. "
-                    "Enter within 15 minutes of open. Exit before 3 PM — do not hold to expiry."
+                    f"Traders looking for an intraday scalp on {ticker} sometimes consider "
+                    "a same-day (0DTE) at-the-money call option, typically entered within "
+                    "the first 15–30 minutes of open and closed well before 3 PM. "
+                    "This is a minute-to-minute contract — it expires worthless at end of day."
                 ),
-                note="Extremely high leverage. Can go to zero same day. Only for experienced options traders.",
+                note=f"Extremely high risk. The premium can go to zero within hours. Only suitable for experienced options traders. {_DYOR}",
             ))
         elif is_swing:
-            # Moderate: weekly call
             options.append(ExecutionOption(
                 risk_level="moderate",
                 instrument="Weekly Call Option",
                 how=(
-                    f"Buy a call option on {ticker} expiring in 1-2 weeks, "
-                    "strike price near the current price (ATM). "
-                    "Close when the stock hits the price target."
+                    f"Traders holding for a multi-day move sometimes consider a call option "
+                    f"on {ticker} expiring in 1–2 weeks, with a strike near the current price. "
+                    "The position would typically be closed when the price target is approached, "
+                    "not held to expiry."
                 ),
-                note="2-5x leverage. Loses value daily — don't hold past the target.",
+                note=f"Options lose value every day (theta decay) — the longer you hold, the more you pay for time. {_DYOR}",
             ))
         else:
-            # Moderate: 2-3 day call
             options.append(ExecutionOption(
                 risk_level="moderate",
-                instrument="Short-Term Call Option",
+                instrument="Short-Term Call Option (3–5 Days)",
                 how=(
-                    f"Buy a call option on {ticker} expiring in 3-5 days, ATM or one strike OTM. "
-                    "Close position when target is reached, not at expiry."
+                    f"For a 1–3 day move, some traders consider a short-term call option on {ticker} "
+                    "expiring in 3–5 days, at or slightly out of the money. "
+                    "The idea is to close the position when the target is reached, not at expiry."
                 ),
-                note="Higher leverage than shares but premium decays fast. Set an alert at the target.",
+                note=f"More leverage than shares but premium decays fast. Set a price alert at the target. {_DYOR}",
             ))
 
     elif action == "SELL":
-        # Conservative: buy a put (no margin account needed)
         options.append(ExecutionOption(
             risk_level="conservative",
             instrument="Put Option",
             how=(
-                f"Buy a put option on {ticker}. "
-                "Strike near current price (ATM), expiry 3-7 days out. "
-                "Close when the stock hits the stop target below."
+                f"Traders anticipating a drop in {ticker} sometimes consider a put option "
+                "with a strike near the current price, expiring 3–7 days out. "
+                "The position would typically be closed when the price reaches the lower target."
             ),
-            note="Best way to short without a margin account. Max loss is the premium paid.",
+            note=f"A put option lets you profit from a decline without needing a margin account. Max loss is limited to the premium paid. {_DYOR}",
         ))
 
-        # Moderate: short the stock
         options.append(ExecutionOption(
             risk_level="moderate",
-            instrument="Short Sell",
+            instrument="Short Position",
             how=(
-                f"Short {ticker} at market open. "
-                "Set a buy-stop at the stop price to cap your loss automatically."
+                f"Some traders in a bearish setup consider shorting {ticker}, "
+                "with a buy-stop order placed at the stop price to automatically limit losses "
+                "if the trade moves against them."
             ),
-            note="Requires a margin account. Borrow fees apply on volatile stocks.",
+            note=f"Requires a margin account and short-selling approval. Borrow fees apply on high-demand tickers. {_DYOR}",
         ))
 
         if is_intraday:
             options.append(ExecutionOption(
                 risk_level="aggressive",
-                instrument="0DTE Put Option",
+                instrument="0DTE Put Option (Same-Day Expiry)",
                 how=(
-                    f"Buy a same-day expiring (0DTE) ATM put on {ticker}. "
-                    "Enter within 30 minutes of open on confirmation of weakness. "
-                    "Exit before 3 PM — never hold a 0DTE to expiry."
+                    f"For an intraday bearish scalp on {ticker}, some traders consider "
+                    "a same-day (0DTE) at-the-money put option, typically entered "
+                    "within the first 30 minutes of open on confirmation of downside momentum. "
+                    "These are closed before 3 PM — never held to expiry."
                 ),
-                note="Can 5-10x on a strong move. Can go to zero in an hour. High risk.",
+                note=f"Can amplify a strong down move significantly. Can also go to zero within an hour on a reversal. Very high risk. {_DYOR}",
             ))
 
     return options
@@ -136,46 +138,47 @@ def _stock_suggestions(action: str, horizon: str, confidence: float, ticker: str
 # ── Forex ────────────────────────────────────────────────────────────────────
 
 _FOREX_ETF_PROXIES = {
-    "EURUSD=X": ("FXE",  "Euro ETF"),
-    "GBPUSD=X": ("FXB",  "British Pound ETF"),
-    "USDJPY=X": ("FXY",  "Japanese Yen ETF (inverse — buy FXY to short USD/JPY)"),
-    "AUDUSD=X": ("FXA",  "Australian Dollar ETF"),
-    "USDCAD=X": ("FXC",  "Canadian Dollar ETF (inverse)"),
-    "USDCHF=X": ("FXF",  "Swiss Franc ETF (inverse)"),
+    "EURUSD=X": ("FXE",  "Euro ETF",                False),
+    "GBPUSD=X": ("FXB",  "British Pound ETF",        False),
+    "USDJPY=X": ("FXY",  "Japanese Yen ETF",         True),   # inverse — FXY rises when USD/JPY falls
+    "AUDUSD=X": ("FXA",  "Australian Dollar ETF",    False),
+    "USDCAD=X": ("FXC",  "Canadian Dollar ETF",      True),
+    "USDCHF=X": ("FXF",  "Swiss Franc ETF",          True),
 }
 
 def _forex_suggestions(action: str, horizon: str, ticker: str) -> list[ExecutionOption]:
-    etf_ticker, etf_name = _FOREX_ETF_PROXIES.get(ticker, (None, None))
+    proxy = _FOREX_ETF_PROXIES.get(ticker)
     options = []
 
+    direction = "long" if action == "BUY" else "short"
     options.append(ExecutionOption(
         risk_level="conservative",
         instrument="Spot Forex",
         how=(
-            f"Open a {'long' if action == 'BUY' else 'short'} position on the pair directly "
-            "through a forex broker (OANDA, Interactive Brokers, or TD Ameritrade). "
-            "Use micro lots (1,000 units) to limit exposure."
+            f"Traders aligned with this signal sometimes consider a {direction} position "
+            "on the pair through a forex broker such as OANDA, Interactive Brokers, or TD Ameritrade. "
+            "Micro lots (1,000 units) are one way to limit exposure while learning the pair."
         ),
-        note="Requires a forex account. Use no more than 10:1 leverage for this time horizon.",
+        note=f"Requires a forex-enabled account. Consider no more than 10:1 leverage for this time horizon. {_DYOR}",
     ))
 
-    if etf_ticker:
-        etf_action = "Buy" if action == "BUY" else "Buy"
-        if "inverse" in (etf_name or "").lower() and action == "BUY":
-            etf_direction = f"Sell {etf_ticker}"
-        elif "inverse" in (etf_name or "").lower() and action == "SELL":
-            etf_direction = f"Buy {etf_ticker}"
+    if proxy:
+        etf_ticker, etf_name, is_inverse = proxy
+        if is_inverse:
+            etf_direction = "a long position in" if action == "SELL" else "a short position in"
         else:
-            etf_direction = f"{'Buy' if action == 'BUY' else 'Sell'} {etf_ticker}"
+            etf_direction = "a long position in" if action == "BUY" else "a short position in"
 
         options.append(ExecutionOption(
             risk_level="moderate",
-            instrument=f"Currency ETF ({etf_ticker})",
+            instrument=f"Currency ETF — {etf_ticker}",
             how=(
-                f"{etf_direction} ({etf_name}) in your regular brokerage account. "
-                "No forex account needed. Tracks the currency pair with slight delay."
+                f"Traders without a forex account sometimes consider {etf_direction} {etf_ticker} "
+                f"({etf_name}) through a regular brokerage. "
+                "It tracks the currency pair with a slight delay and no forex margin required."
+                + (" Note: this ETF moves inversely to the pair." if is_inverse else "")
             ),
-            note="Slightly less precise than spot forex. Works in any brokerage — Robinhood, Fidelity, etc.",
+            note=f"Available on Robinhood, Fidelity, Schwab, etc. Less precise than spot but accessible. {_DYOR}",
         ))
 
     return options
@@ -184,34 +187,19 @@ def _forex_suggestions(action: str, horizon: str, ticker: str) -> list[Execution
 # ── Precious Metals ──────────────────────────────────────────────────────────
 
 _METAL_MAP = {
-    "GC=F": {
-        "etf": "GLD",  "etf_name": "SPDR Gold ETF",
-        "futures": "/GC", "proxy": "GDX", "proxy_name": "Gold Miners ETF",
-    },
-    "SI=F": {
-        "etf": "SLV",  "etf_name": "iShares Silver Trust",
-        "futures": "/SI", "proxy": "SLV", "proxy_name": "Silver ETF",
-    },
-    "PL=F": {
-        "etf": "PPLT", "etf_name": "Aberdeen Platinum ETF",
-        "futures": "/PL", "proxy": None, "proxy_name": None,
-    },
-    "PA=F": {
-        "etf": "PALL", "etf_name": "Aberdeen Palladium ETF",
-        "futures": "/PA", "proxy": None, "proxy_name": None,
-    },
-    "HG=F": {
-        "etf": "CPER", "etf_name": "United States Copper ETF",
-        "futures": "/HG", "proxy": "COPX", "proxy_name": "Global Copper Miners ETF",
-    },
+    "GC=F": {"etf": "GLD",  "etf_name": "SPDR Gold ETF",              "futures": "/GC", "proxy": "GDX",  "proxy_name": "Gold Miners ETF"},
+    "SI=F": {"etf": "SLV",  "etf_name": "iShares Silver Trust",        "futures": "/SI", "proxy": None,   "proxy_name": None},
+    "PL=F": {"etf": "PPLT", "etf_name": "Aberdeen Platinum ETF",       "futures": "/PL", "proxy": None,   "proxy_name": None},
+    "PA=F": {"etf": "PALL", "etf_name": "Aberdeen Palladium ETF",      "futures": "/PA", "proxy": None,   "proxy_name": None},
+    "HG=F": {"etf": "CPER", "etf_name": "US Copper ETF",               "futures": "/HG", "proxy": "COPX", "proxy_name": "Global Copper Miners ETF"},
 }
 
 def _metal_suggestions(action: str, horizon: str, ticker: str) -> list[ExecutionOption]:
     meta = _METAL_MAP.get(ticker, {})
-    etf = meta.get("etf")
-    etf_name = meta.get("etf_name")
-    futures = meta.get("futures")
-    proxy = meta.get("proxy")
+    etf       = meta.get("etf")
+    etf_name  = meta.get("etf_name")
+    futures   = meta.get("futures")
+    proxy     = meta.get("proxy")
     proxy_name = meta.get("proxy_name")
     options = []
 
@@ -219,45 +207,58 @@ def _metal_suggestions(action: str, horizon: str, ticker: str) -> list[Execution
         if action == "BUY":
             options.append(ExecutionOption(
                 risk_level="conservative",
-                instrument=f"ETF — {etf}",
-                how=f"Buy shares of {etf} ({etf_name}) in your brokerage. No futures account needed.",
-                note="Tracks the spot price closely. Most liquid metals ETF. Sell when target is hit.",
+                instrument=f"Metal ETF — {etf}",
+                how=(
+                    f"Traders looking for exposure to this move sometimes consider a position in "
+                    f"{etf} ({etf_name}) through a regular brokerage account. "
+                    "No futures account needed — it tracks the metal price closely."
+                ),
+                note=f"Most accessible approach. Liquid and available everywhere. Close the position when the target is approached. {_DYOR}",
             ))
             options.append(ExecutionOption(
                 risk_level="moderate",
                 instrument=f"Call Option on {etf}",
-                how=f"Buy a call option on {etf}, strike ATM, expiry 1-2 weeks out.",
-                note="3-5x leverage on the metal move. Close before expiry when target is reached.",
+                how=(
+                    f"Some traders seeking leverage on a bullish metal move consider a call option "
+                    f"on {etf} expiring 1–2 weeks out, strike near the current price. "
+                    "The idea is to close when the target is reached, not at expiry."
+                ),
+                note=f"Options add leverage but also decay daily. Only one approach — weigh the risk carefully. {_DYOR}",
             ))
         else:
             options.append(ExecutionOption(
                 risk_level="conservative",
                 instrument=f"Put Option on {etf}",
-                how=f"Buy a put option on {etf} ({etf_name}), ATM strike, 1-2 week expiry.",
-                note="Clean way to short metals without a futures account. Max loss is premium paid.",
+                how=(
+                    f"Traders expecting a decline in this metal sometimes consider a put option "
+                    f"on {etf} ({etf_name}), strike near current price, expiring 1–2 weeks out."
+                ),
+                note=f"Max loss limited to premium paid. No need to short the futures market directly. {_DYOR}",
             ))
 
-    if proxy and proxy != etf and action == "BUY":
+    if proxy and action == "BUY":
         options.append(ExecutionOption(
             risk_level="moderate",
             instrument=f"Mining Stocks — {proxy}",
             how=(
-                f"Buy {proxy} ({proxy_name}). Mining stocks amplify metal moves — "
-                "gold up 1% often means GDX up 2-3%."
+                f"Some traders use mining stocks like {proxy} ({proxy_name}) as a leveraged proxy "
+                f"for the metal — mining equities often move 2–3x the metal's percentage move. "
+                "This adds company and operational risk on top of the commodity move."
             ),
-            note="Higher leverage than the metal ETF, more volatile. Has company/operational risk too.",
+            note=f"Higher potential return than the ETF but also higher volatility. Research individual holdings. {_DYOR}",
         ))
 
     if futures:
+        direction = "a long position in" if action == "BUY" else "a short position in"
         options.append(ExecutionOption(
             risk_level="aggressive",
             instrument=f"Futures — {futures}",
             how=(
-                f"{'Go long' if action == 'BUY' else 'Go short'} one {futures} futures contract "
-                f"through a futures-enabled broker (TD Ameritrade, Interactive Brokers, Schwab). "
-                "Set stop at the stop price immediately after entry."
+                f"Experienced futures traders sometimes consider {direction} one {futures} contract "
+                "through a futures-enabled broker (TD Ameritrade, Interactive Brokers, Schwab). "
+                "A stop order at the stop price would typically be placed immediately after entry."
             ),
-            note=f"One {futures} contract controls a large position. High leverage. Requires a futures account.",
+            note=f"Futures carry significant leverage and require a futures-approved account. One contract controls a large notional position. {_DYOR}",
         ))
 
     return options
@@ -275,16 +276,17 @@ def _crypto_suggestions(action: str, horizon: str, ticker: str) -> list[Executio
     coin_name = ticker.replace("-USD", "")
     options = []
 
-    # Conservative: spot on exchange
     if action == "BUY":
         options.append(ExecutionOption(
             risk_level="conservative",
             instrument=f"Spot Crypto — {coin_name}",
             how=(
-                f"Buy {coin_name} directly on Coinbase, Kraken, or Gemini. "
-                "Set a price alert at the target and a sell order at the stop price."
+                f"Traders aligned with a bullish {coin_name} signal sometimes consider "
+                f"a spot position on an exchange such as Coinbase, Kraken, or Gemini. "
+                "A price alert at the target and a standing sell order at the stop price "
+                "are two ways some traders manage the position."
             ),
-            note="You own the asset outright. No expiration. Can hold through volatility.",
+            note=f"You hold the asset directly. No expiration. Crypto is highly volatile — size accordingly. {_DYOR}",
         ))
 
         if etf_ticker:
@@ -292,31 +294,34 @@ def _crypto_suggestions(action: str, horizon: str, ticker: str) -> list[Executio
                 risk_level="conservative",
                 instrument=f"Crypto ETF — {etf_ticker}",
                 how=(
-                    f"Buy {etf_ticker} ({etf_name}) in your regular brokerage account. "
-                    "No crypto exchange account needed."
+                    f"Traders who prefer to stay within a brokerage account sometimes consider "
+                    f"{etf_ticker} ({etf_name}), which tracks {coin_name} without requiring "
+                    "a separate crypto exchange account. Works in IRA and standard accounts."
                 ),
-                note="Tracks the coin price. Slightly less responsive than spot. Great for IRA accounts.",
+                note=f"Slightly less responsive than spot but accessible everywhere. {_DYOR}",
             ))
 
-        options.append(ExecutionOption(
-            risk_level="moderate",
-            instrument=f"Call Option on {etf_ticker or coin_name}",
-            how=(
-                f"Buy a call option on {etf_ticker or 'IBIT'} expiring in 1-2 weeks, ATM strike. "
-                "Close when price target is hit."
-            ),
-            note="3-5x leverage. Only available on ETF-listed coins (BTC, ETH). Loses value daily.",
-        ))
+            options.append(ExecutionOption(
+                risk_level="moderate",
+                instrument=f"Call Option on {etf_ticker}",
+                how=(
+                    f"Some traders seeking leverage on a bullish {coin_name} move consider "
+                    f"a call option on {etf_ticker} expiring 1–2 weeks out, strike near current price. "
+                    "Only available on ETF-listed coins."
+                ),
+                note=f"Options on crypto ETFs add leverage but decay daily. Crypto can move fast in both directions. {_DYOR}",
+            ))
 
     elif action == "SELL":
         options.append(ExecutionOption(
             risk_level="conservative",
-            instrument=f"Sell/Exit {coin_name}",
+            instrument=f"Reduce or Exit {coin_name} Position",
             how=(
-                f"If you hold {coin_name}, this is a signal to take profits or reduce your position. "
-                "Move to stablecoins (USDC/USDT) to preserve capital."
+                f"Traders who already hold {coin_name} and are seeing a bearish signal "
+                "sometimes consider reducing their position or moving into a stablecoin "
+                "(USDC or USDT) to preserve capital while they reassess."
             ),
-            note="Only short crypto if you have experience. Most retail traders should just exit longs.",
+            note=f"Exiting a long is the lowest-risk bearish action. Shorting crypto carries additional complexity and risk. {_DYOR}",
         ))
 
         if etf_ticker:
@@ -324,10 +329,11 @@ def _crypto_suggestions(action: str, horizon: str, ticker: str) -> list[Executio
                 risk_level="moderate",
                 instrument=f"Put Option on {etf_ticker}",
                 how=(
-                    f"Buy a put option on {etf_ticker} ({etf_name}), ATM strike, 1-2 week expiry. "
-                    "Profits if the coin drops."
+                    f"Some traders expecting a {coin_name} decline consider a put option on "
+                    f"{etf_ticker} ({etf_name}), expiring 1–2 weeks out, strike near current price. "
+                    "This is one way to express a bearish view without shorting on a crypto exchange."
                 ),
-                note="Clean way to profit from a crypto drop without shorting on an exchange.",
+                note=f"Max loss limited to premium paid. Only available for BTC and ETH via their ETFs. {_DYOR}",
             ))
 
     return options
@@ -343,24 +349,24 @@ _RISK_EMOJI = {
 
 
 def format_execution_tier1(signal: dict) -> str:
-    """One-line execution hint for the free channel."""
+    """One-line execution hint for the free channel — conservative option only."""
     suggestions = suggest_execution(signal)
     if not suggestions:
         return ""
-    # Show the conservative option only
     s = suggestions[0]
-    return f"💡 <i>How to play: {s.instrument} — {s.how.split('.')[0]}.</i>"
+    first_sentence = s.how.split(".")[0].strip()
+    return f"💡 <i>One approach some traders consider: {s.instrument.lower()} — {first_sentence}.</i>"
 
 
 def format_execution_tier2(signal: dict) -> str:
-    """Full execution section for the paid channel."""
+    """Full execution suggestion block for the paid channel."""
     suggestions = suggest_execution(signal)
     if not suggestions:
         return ""
-    lines = ["<b>How to play this:</b>"]
+    lines = ["<b>How some traders approach this setup:</b>"]
     for s in suggestions:
         emoji = _RISK_EMOJI.get(s.risk_level, "⚪")
-        lines.append(f"{emoji} <b>{s.instrument}</b>  [{s.risk_level.upper()}]")
+        lines.append(f"\n{emoji} <b>{s.instrument}</b>  [{s.risk_level.upper()}]")
         lines.append(f"   {s.how}")
         lines.append(f"   <i>⚠️ {s.note}</i>")
     return "\n".join(lines)

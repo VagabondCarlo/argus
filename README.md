@@ -138,17 +138,17 @@ Forex and crypto markets never close — broadcasts run all 7 days.
 
 ## Execution Suggestion Engine
 
-Every signal in Tier 2 includes a concrete "how to play this" breakdown — not just the direction, but the exact instrument and method, ranked by risk level.
+Every signal in Tier 2 includes a "how some traders approach this setup" breakdown — not directives, but the instruments and methods traders commonly use in similar situations, ranked by risk level.
 
 | Risk Level | Stocks | Forex | Metals | Crypto |
 |---|---|---|---|---|
-| 🟢 Conservative | Buy shares with stop | Spot forex (micro lots) | GLD/SLV ETF | Spot on Coinbase/Kraken |
-| 🟡 Moderate | Weekly call/put options | Currency ETF (FXE, FXB…) | Call/put on ETF, mining stocks (GDX) | IBIT/ETHA ETF, options |
+| 🟢 Conservative | Shares with a stop order | Spot forex via broker | GLD/SLV/PPLT ETF | Spot on Coinbase/Kraken |
+| 🟡 Moderate | Weekly call/put options | Currency ETF (FXE, FXB…) | Options on ETF, mining stocks (GDX) | IBIT/ETHA ETF or options |
 | 🔴 Aggressive | 0DTE call/put (intraday scalp) | — | /GC /SI futures | — |
 
-Tier 1 shows one conservative execution hint per pick. Tier 2 shows all three tiers with specific entry instructions and risk notes.
+Tier 1 shows one conservative suggestion per pick. Tier 2 shows all three risk tiers with specific context and risk notes.
 
-> Argus is not a financial advisor. All suggestions are educational. Do your own research before trading.
+Every suggestion includes a DYOR reminder. Argus is not a financial advisor — these are educational suggestions only.
 
 ---
 

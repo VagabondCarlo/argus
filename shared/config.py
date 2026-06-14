@@ -17,6 +17,9 @@ class Config:
     # News
     NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
+    # Master key — required for destructive commands
+    MASTER_KEY = os.getenv("MASTER_KEY", "")
+
     # Trading rules — these are hard limits, not suggestions
     CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
     MAX_TRADES_PER_WEEK = int(os.getenv("MAX_TRADES_PER_WEEK", "3"))

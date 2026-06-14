@@ -203,15 +203,37 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+def _has_master_key(args: list) -> bool:
+    return config.MASTER_KEY and config.MASTER_KEY in args
+
+
+LOCKED_MSG = (
+    "🔒 This command requires your authorization code.\n\n"
+    "Usage: `/{command} {key} ...`"
+)
+
+
 @owner_only
 async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _has_master_key(context.args or []):
+        await update.message.reply_text(
+            LOCKED_MSG.replace("{command}", "pause").replace("{key}", "••••••"),
+            parse_mode="Markdown"
+        )
+        return
     result = await _post_executor("/control/pause")
-    msg = "⏸ Trading paused. Send /resume to restart." if "error" not in result else f"❌ {result['error']}"
-    await update.message.reply_text(msg)
+    msg = "⏸ Trading paused. Send `/resume {key}` to restart.".replace("{key}", "••••••") if "error" not in result else f"❌ {result['error']}"
+    await update.message.reply_text("⏸ Trading paused. Send /resume to restart.")
 
 
 @owner_only
 async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _has_master_key(context.args or []):
+        await update.message.reply_text(
+            LOCKED_MSG.replace("{command}", "resume").replace("{key}", "••••••"),
+            parse_mode="Markdown"
+        )
+        return
     result = await _post_executor("/control/resume")
     msg = "▶️ Trading resumed." if "error" not in result else f"❌ {result['error']}"
     await update.message.reply_text(msg)
@@ -219,6 +241,12 @@ async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _has_master_key(context.args or []):
+        await update.message.reply_text(
+            LOCKED_MSG.replace("{command}", "stop").replace("{key}", "••••••"),
+            parse_mode="Markdown"
+        )
+        return
     keyboard = [[
         InlineKeyboardButton("✅ Yes, emergency stop", callback_data="confirm_stop"),
         InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
@@ -232,13 +260,21 @@ async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def cmd_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
+    args = context.args or []
+    if not _has_master_key(args):
         await update.message.reply_text(
-            f"Current threshold: {config.CONFIDENCE_THRESHOLD:.0%}\nUsage: /threshold 0.80"
+            LOCKED_MSG.replace("{command}", "threshold 0.80").replace("{key}", "••••••"),
+            parse_mode="Markdown"
+        )
+        return
+    value_args = [a for a in args if a != config.MASTER_KEY]
+    if not value_args:
+        await update.message.reply_text(
+            f"Current threshold: {config.CONFIDENCE_THRESHOLD:.0%}\nUsage: /threshold 0.80 [key]"
         )
         return
     try:
-        value = float(context.args[0])
+        value = float(value_args[0])
         if not 0.50 <= value <= 1.0:
             raise ValueError
     except ValueError:

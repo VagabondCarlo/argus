@@ -556,6 +556,32 @@ async def cmd_upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_wsb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /wsb — Today's top Reddit social mentions across r/wallstreetbets,
+    r/stocks, r/options, r/investing, and more. Ranked by weighted
+    engagement score and cross-tagged with sentiment.
+    """
+    await update.message.reply_text(
+        "🔍 Scanning Reddit for today's top picks... (takes ~30 seconds)",
+        parse_mode="HTML"
+    )
+    try:
+        import threading
+        from analyst.data.reddit_scraper import format_wsb_report
+        result = {}
+        def _fetch():
+            result["report"] = format_wsb_report(top_n=15)
+        t = threading.Thread(target=_fetch)
+        t.start()
+        t.join(timeout=60)
+        report = result.get("report", "Reddit data unavailable right now.")
+        await update.message.reply_text(report, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"/wsb command failed: {e}")
+        await update.message.reply_text("Reddit scan failed. Try again shortly.")
+
+
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_predictions(signals), parse_mode="Markdown")
@@ -777,6 +803,7 @@ def run_bot():
     app.add_handler(CommandHandler("setups", cmd_setups))
     app.add_handler(CommandHandler("research", cmd_research))
     app.add_handler(CommandHandler("upgrade", cmd_upgrade))
+    app.add_handler(CommandHandler("wsb", cmd_wsb))
 
     # Callbacks (owner + guest)
     app.add_handler(CallbackQueryHandler(callback_handler))

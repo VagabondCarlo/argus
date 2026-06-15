@@ -197,6 +197,9 @@ def analyze_extended(
             return None
 
         price = snapshot["price"]
+        if signal.get("price_target") is None or signal.get("stop_loss") is None:
+            logger.warning(f"LLM returned null levels for {snapshot['ticker']}, skipping")
+            return None
         target = float(signal["price_target"])
         stop = float(signal["stop_loss"])
         action = signal["action"]

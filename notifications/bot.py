@@ -556,30 +556,36 @@ async def cmd_upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def cmd_wsb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_social(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /wsb — Today's top Reddit social mentions across r/wallstreetbets,
-    r/stocks, r/options, r/investing, and more. Ranked by weighted
-    engagement score and cross-tagged with sentiment.
+    /social — Real-time social intelligence across Twitter/X, Reddit (WSB + 25 subs),
+    Bluesky, Truth Social, and international markets (London, Hong Kong, Asia Pacific).
+    Ranked by cross-platform conviction score.
     """
     await update.message.reply_text(
-        "🔍 Scanning Reddit for today's top picks... (takes ~30 seconds)",
+        "📡 Scanning all social platforms for today's top picks...\n"
+        "<i>Twitter/X, Reddit, Bluesky, Truth Social, global markets — takes ~45 seconds</i>",
         parse_mode="HTML"
     )
     try:
         import threading
-        from analyst.data.reddit_scraper import format_wsb_report
+        from analyst.data.social_aggregator import format_social_report
         result = {}
         def _fetch():
-            result["report"] = format_wsb_report(top_n=15)
+            result["report"] = format_social_report(top_n=15)
         t = threading.Thread(target=_fetch)
         t.start()
-        t.join(timeout=60)
-        report = result.get("report", "Reddit data unavailable right now.")
+        t.join(timeout=90)
+        report = result.get("report", "Social data unavailable right now. Try again shortly.")
         await update.message.reply_text(report, parse_mode="HTML")
     except Exception as e:
-        logger.error(f"/wsb command failed: {e}")
-        await update.message.reply_text("Reddit scan failed. Try again shortly.")
+        logger.error(f"/social command failed: {e}")
+        await update.message.reply_text("Social scan failed. Try again shortly.")
+
+
+async def cmd_wsb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Legacy alias — /wsb now routes to /social."""
+    await cmd_social(update, context)
 
 
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -803,6 +809,7 @@ def run_bot():
     app.add_handler(CommandHandler("setups", cmd_setups))
     app.add_handler(CommandHandler("research", cmd_research))
     app.add_handler(CommandHandler("upgrade", cmd_upgrade))
+    app.add_handler(CommandHandler("social", cmd_social))
     app.add_handler(CommandHandler("wsb", cmd_wsb))
 
     # Callbacks (owner + guest)

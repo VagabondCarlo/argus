@@ -44,6 +44,20 @@ def init_db():
                 wins             INTEGER DEFAULT 0,
                 losses           INTEGER DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS paid_users (
+                user_id   INTEGER PRIMARY KEY,
+                username  TEXT,
+                added_at  TEXT DEFAULT (datetime('now')),
+                note      TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS guest_questions (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id   INTEGER NOT NULL,
+                asked_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_guest_questions_user ON guest_questions(user_id, asked_at);
         """)
 
 
@@ -120,3 +134,60 @@ def get_todays_stats():
         "wins": 0,
         "losses": 0,
     }
+
+
+# ── Paid user management ──────────────────────────────────────────────────────
+
+def is_paid_user(user_id: int) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM paid_users WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    return row is not None
+
+
+def add_paid_user(user_id: int, username: str = "", note: str = ""):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO paid_users (user_id, username, note) VALUES (?, ?, ?)",
+            (user_id, username, note)
+        )
+
+
+def remove_paid_user(user_id: int):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM paid_users WHERE user_id = ?", (user_id,))
+
+
+def list_paid_users() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM paid_users ORDER BY added_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Guest rate limiting (2 questions per 4 hours, by Telegram user_id) ────────
+
+RATE_LIMIT_MAX   = 2
+RATE_LIMIT_HOURS = 4
+
+
+def count_recent_questions(user_id: int) -> tuple[int, str | None]:
+    """Returns (count_in_window, oldest_asked_at ISO string or None)."""
+    cutoff = datetime.utcnow().replace(microsecond=0) - __import__('datetime').timedelta(hours=RATE_LIMIT_HOURS)
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT asked_at FROM guest_questions WHERE user_id = ? AND asked_at > ? ORDER BY asked_at ASC",
+            (user_id, cutoff.isoformat())
+        ).fetchall()
+    if not rows:
+        return 0, None
+    return len(rows), rows[0]["asked_at"]
+
+
+def record_question(user_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO guest_questions (user_id) VALUES (?)", (user_id,)
+        )

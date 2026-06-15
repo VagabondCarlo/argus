@@ -20,6 +20,9 @@ class Config:
     # News
     NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
+    # Social media
+    TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN", "")
+
     # Master key — required for destructive commands
     MASTER_KEY = os.getenv("MASTER_KEY", "")
 

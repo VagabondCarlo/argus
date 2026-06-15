@@ -194,6 +194,9 @@ def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, mark
 
         # Enforce risk/reward check — don't trust the model alone
         price = snapshot["price"]
+        if signal.get("price_target") is None or signal.get("stop_loss") is None:
+            logger.warning(f"LLM returned null levels for {snapshot['ticker']}, skipping")
+            return None
         target = float(signal["price_target"])
         stop = float(signal["stop_loss"])
         action = signal["action"]

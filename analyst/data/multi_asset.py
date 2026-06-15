@@ -14,7 +14,7 @@ from analyst.data.universe_extended import FOREX_PAIRS, METALS_PAIRS, CRYPTO_PAI
 logger = logging.getLogger(__name__)
 
 
-def _fetch_ohlcv(ticker: str, period: str = "60d", interval: str = "1d") -> pd.DataFrame | None:
+def _fetch_ohlcv(ticker: str, period: str = "90d", interval: str = "1d") -> pd.DataFrame | None:
     try:
         df = yf.download(ticker, period=period, interval=interval,
                          progress=False, auto_adjust=True)

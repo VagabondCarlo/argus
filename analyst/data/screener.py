@@ -23,7 +23,7 @@ def _quick_screen(ticker: str) -> dict | None:
     Returns a scored dict if the ticker passes, None if it fails.
     """
     try:
-        df = yf.download(ticker, period="30d", interval="1d",
+        df = yf.download(ticker, period="90d", interval="1d",
                          progress=False, auto_adjust=True)
         if df.empty or len(df) < 20:
             return None

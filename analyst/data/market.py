@@ -11,7 +11,7 @@ WATCHLIST = [
 ]
 
 
-def fetch_historical(ticker: str, period: str = "30d", interval: str = "1d") -> pd.DataFrame | None:
+def fetch_historical(ticker: str, period: str = "90d", interval: str = "1d") -> pd.DataFrame | None:
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
         if df.empty:

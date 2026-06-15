@@ -50,7 +50,7 @@ def _add_indicators(df: pd.DataFrame, has_volume: bool = True) -> pd.DataFrame:
     df["ema_21"] = ta.trend.EMAIndicator(close, window=21).ema_indicator()
 
     if has_volume and "volume" in df.columns:
-        vol = df["volume"].replace(0, pd.NA)
+        vol = pd.to_numeric(df["volume"], errors="coerce").replace(0, float("nan"))
         df["volume_sma"] = vol.rolling(window=20).mean()
         df["volume_ratio"] = (vol / df["volume_sma"]).fillna(1.0)
     else:

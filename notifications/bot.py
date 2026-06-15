@@ -99,7 +99,8 @@ async def _post_executor(endpoint: str, payload: dict = {}) -> dict:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
                 f"http://{config.EXECUTOR_HOST}:{config.EXECUTOR_PORT}{endpoint}",
-                json=payload
+                json=payload,
+                headers={"Authorization": f"Bearer {config.MASTER_KEY}"},
             )
             return r.json()
     except Exception as e:
@@ -375,7 +376,7 @@ async def cmd_addpaid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not value_args:
         await update.message.reply_text(
             "Usage: `/addpaid KEY USER_ID [note]`\n"
-            "Example: `/addpaid Jaxson 123456789 Paid via PayPal June 2026`\n\n"
+            "Example: `/addpaid [key] 123456789 Paid via PayPal June 2026`\n\n"
             "Tip: forward their message to @userinfobot to get their ID.",
             parse_mode="Markdown"
         )

@@ -18,6 +18,7 @@ from notifications.reports import (
     guest_welcome, guest_predictions, guest_suggestions, guest_high_probability
 )
 from analyst.data.market_news import get_market_news, format_news_report
+from analyst.data.browser_scraper import get_browser_enrichment, get_stocktwits_sentiment, browse_url
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -369,6 +370,54 @@ async def cmd_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(format_news_report(articles), parse_mode="HTML", disable_web_page_preview=True)
 
 
+async def cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /research TICKER — live browser lookup: social sentiment, options flow,
+    insider summary. Works for stocks and crypto. Open to all users.
+    """
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(
+            "Usage: /research TICKER\nExample: /research NVDA or /research BTC-USD"
+        )
+        return
+
+    ticker = args[0].upper()
+    await update.message.reply_text(
+        f"🔍 Running live browser research on <b>{ticker}</b>...",
+        parse_mode="HTML"
+    )
+
+    try:
+        import threading
+        asset_type = "crypto" if "-USD" in ticker else "stock"
+
+        # Run in thread — Playwright is sync
+        result = {}
+        def _fetch():
+            result["data"] = get_browser_enrichment(ticker, asset_type=asset_type)
+        t = threading.Thread(target=_fetch)
+        t.start()
+        t.join(timeout=30)
+
+        ctx = result.get("data", {}).get("llm_context", "")
+
+        if not ctx or ctx == "No browser enrichment available.":
+            await update.message.reply_text(
+                f"No live data found for <b>{ticker}</b> right now. "
+                "Try again during market hours or check the ticker symbol.",
+                parse_mode="HTML"
+            )
+            return
+
+        lines = [f"🔍 <b>Live Research — {ticker}</b>\n", ctx, "\n<i>Data pulled live. Not financial advice. Do your own research.</i>"]
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+    except Exception as e:
+        logger.error(f"Research command failed for {ticker}: {e}")
+        await update.message.reply_text("Research fetch failed. Try again shortly.")
+
+
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_predictions(signals), parse_mode="Markdown")
@@ -543,6 +592,7 @@ def run_bot():
     app.add_handler(CommandHandler("predictions", cmd_predictions))
     app.add_handler(CommandHandler("suggestions", cmd_suggestions))
     app.add_handler(CommandHandler("setups", cmd_setups))
+    app.add_handler(CommandHandler("research", cmd_research))
 
     # Callbacks (owner + guest)
     app.add_handler(CallbackQueryHandler(callback_handler))

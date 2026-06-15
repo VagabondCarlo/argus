@@ -160,6 +160,9 @@ Every suggestion includes a DYOR reminder. Argus is not a financial advisor — 
 | Broker API | Alpaca Markets paper trading |
 | Market Data | yfinance (equities, forex, metals, crypto) |
 | News/Sentiment | Multi-source RSS (Yahoo Finance, CNBC, MarketWatch) |
+| Web Scraping | requests + BeautifulSoup (Finviz — analyst ratings, short interest) |
+| Browser Automation | Playwright + headless Chromium (JS-heavy sites: StockTwits, Barchart, CoinGecko) |
+| Research Agent | OpenClaw (self-hosted AI browser agent, powered by local Ollama) |
 | Notifications | Telegram Bot (`@ArgusVagabondBot`) + 2 broadcast channels |
 | Agent API | FastAPI + Uvicorn (Analyst :8001, Executor :8002) |
 | Session Management | tmux (persistent, survives SSH disconnect) |
@@ -209,6 +212,7 @@ Destructive commands require the master authorization key.
 | `/suggestions` | Setups with entry, stop-loss, and target |
 | `/setups` | Signals at 65%+ confidence |
 | `/news` | Top 3 market-moving headlines with links |
+| `/research TICKER` | Live browser lookup — social sentiment, options flow, insider summary |
 
 Guests can also talk to Argus in plain text. It responds with market analysis and trading education — always framed as suggestions, never directives. Ask it about a stock, a forex pair, what's moving, or anything markets-related.
 
@@ -245,6 +249,63 @@ Guests can also talk to Argus in plain text. It responds with market analysis an
 
 ---
 
+## Data Intelligence Pipeline
+
+Every signal Argus generates is backed by 4 layers of data — not just price charts.
+
+```
+Layer 1 — PRICE & TECHNICALS (yfinance)
+  RSI, MACD, Bollinger Bands, EMA, Volume — standard but precise
+
+Layer 2 — FUNDAMENTAL & INSIDER (yfinance extended + Finviz scraper)
+  Analyst consensus, price targets, insider buy/sell 90-day window,
+  short interest %, earnings proximity (hard confidence cap <7 days)
+
+Layer 3 — SOCIAL & OPTIONS SENTIMENT (Playwright browser automation)
+  StockTwits bullish/bearish vote counts, Barchart unusual options flow,
+  CoinGecko on-chain sentiment for crypto — JS-rendered pages that
+  block normal scrapers
+
+Layer 4 — ON-DEMAND DEEP RESEARCH (OpenClaw AI research agent)
+  Any page, any site, live. Triggered via /research in Telegram or
+  during signal analysis. Uses local Ollama — no cloud, no data leaks.
+  Targets: SEC EDGAR, OpenInsider, Reddit, StockTwits, DailyFX, and more.
+```
+
+---
+
+## Changelog
+
+### v0.4 — Browser Intelligence + OpenClaw (Current)
+- **Playwright scraper** (`analyst/data/browser_scraper.py`): headless Chromium handles JS-rendered pages that block standard requests — StockTwits social sentiment, Barchart unusual options flow, CoinGecko on-chain data
+- **OpenClaw research agent** installed on Mac Mini with Ollama backend — self-hosted AI browser for on-demand deep research across any site
+- **`/research TICKER`** Telegram command: live browser lookup returns social sentiment and options flow directly in chat (open to all users)
+- **Execution suggestion engine** (`analyst/signals/execution.py`): every signal now includes "how some traders approach this setup" — conservative/moderate/aggressive options per asset class with DYOR disclaimer
+
+### v0.3 — Web Scraper + Multi-Asset Enrichment
+- **Web scraper layer** (`analyst/data/web_scraper.py`): Finviz HTML scraping for analyst ratings, short interest, price targets; yfinance extended for earnings calendar, insider transactions, analyst consensus
+- **Earnings proximity hard cap**: if earnings are within 7 days, confidence is capped at 65% — binary events cannot be predicted by technicals
+- **Insider activity signal**: 90-day buy/sell window fed into LLM as Fundamental Quality context
+- **Three-committee framework de-attributed**: removed all direct quotes from real investors to avoid legal exposure; framework preserved, attribution removed
+
+### v0.2 — Multi-Asset Broadcast + Two-Tier Channel System
+- **4-asset-class coverage**: added forex (9 pairs), precious metals (5), crypto (9) via yfinance extended universe
+- **Multi-asset analyzer** (`analyst/sentiment/analyzer_extended.py`): adapted three-committee framework for non-equity assets — currency divergence, inflation regime, crypto adoption thesis
+- **3× daily broadcasts**: 8:15 AM pre-market, 12:00 PM midday, 4:30 PM next-day preview — runs 7 days/week (forex and crypto don't close)
+- **Two-tier Telegram channels**: Tier 1 (free public) shows 2nd-best pick per class with execution hint; Tier 2 (paid private) shows top 3 per class with full entry/stop/target and committee reasoning
+- **Suggestion-only language**: all execution guidance framed as "some traders consider..." — never directives
+
+### v0.1 — Core Trading System
+- Two-agent architecture: Analyst (FastAPI :8001) + Executor (FastAPI :8002)
+- Three-committee LLM framework (Fundamental / Macro / Technical) on Llama 3.1 8B
+- Two-stage audit: Analyst 70–75% → Executor independent stress-test → execute if ≥75%
+- Alpaca paper trading API integration with full risk controls (2% stop, 40% max position, 3/week PDT limit, 6% weekly kill switch)
+- Telegram bot with owner control + guest conversational mode
+- Full-universe equity scan: S&P 500 + 300 liquid names, concurrent ThreadPoolExecutor
+- tmux session management, launchd auto-start, Tailscale remote SSH
+
+---
+
 ## Project Structure
 
 ```
@@ -257,7 +318,9 @@ argus/
 │   │   ├── market.py             # Technical indicators (RSI, MACD, BB, EMA)
 │   │   ├── multi_asset.py        # Snapshots for forex, metals, crypto
 │   │   ├── news.py               # NewsAPI integration
-│   │   └── market_news.py        # RSS headlines (/news command)
+│   │   ├── market_news.py        # RSS headlines (/news command)
+│   │   ├── web_scraper.py        # Finviz + yfinance extended (insider, analyst, earnings)
+│   │   └── browser_scraper.py    # Playwright headless browser (StockTwits, Barchart, CoinGecko)
 │   ├── sentiment/
 │   │   ├── analyzer.py           # Three-committee LLM framework (equities)
 │   │   └── analyzer_extended.py  # Adapted framework for forex/metals/crypto

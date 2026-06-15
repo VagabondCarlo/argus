@@ -358,47 +358,73 @@ async def cmd_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @owner_only
 async def cmd_addpaid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /addpaid USER_ID [note]
+    /addpaid KEY USER_ID [note]
     Promotes a Telegram user to paid tier (unlimited questions).
+    Requires MASTER_KEY as first argument.
     Get a user's ID by forwarding their message to @userinfobot.
     """
     args = context.args or []
-    if not args:
+    if not _has_master_key(args):
         await update.message.reply_text(
-            "Usage: /addpaid USER_ID [note]\n"
-            "Example: /addpaid 123456789 Paid via PayPal June 2026\n\n"
-            "Tip: forward their message to @userinfobot to get their ID."
+            "🔒 Requires authorization.\n"
+            "Usage: `/addpaid KEY USER_ID [note]`",
+            parse_mode="Markdown"
+        )
+        return
+    value_args = [a for a in args if a != config.MASTER_KEY]
+    if not value_args:
+        await update.message.reply_text(
+            "Usage: `/addpaid KEY USER_ID [note]`\n"
+            "Example: `/addpaid Jaxson 123456789 Paid via PayPal June 2026`\n\n"
+            "Tip: forward their message to @userinfobot to get their ID.",
+            parse_mode="Markdown"
         )
         return
     try:
-        user_id = int(args[0])
+        user_id = int(value_args[0])
     except ValueError:
         await update.message.reply_text("USER_ID must be a number.")
         return
-    note = " ".join(args[1:]) if len(args) > 1 else ""
+    note = " ".join(value_args[1:])
     add_paid_user(user_id, note=note)
-    await update.message.reply_text(f"✅ User {user_id} added to paid tier.\n_{note}_", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ User `{user_id}` added to paid tier.\n_{note}_", parse_mode="Markdown")
 
 
 @owner_only
 async def cmd_removepaid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/removepaid USER_ID — revokes paid access."""
+    """/removepaid KEY USER_ID — revokes paid access. Requires MASTER_KEY."""
     args = context.args or []
-    if not args:
-        await update.message.reply_text("Usage: /removepaid USER_ID")
+    if not _has_master_key(args):
+        await update.message.reply_text(
+            "🔒 Requires authorization.\n"
+            "Usage: `/removepaid KEY USER_ID`",
+            parse_mode="Markdown"
+        )
+        return
+    value_args = [a for a in args if a != config.MASTER_KEY]
+    if not value_args:
+        await update.message.reply_text("Usage: `/removepaid KEY USER_ID`", parse_mode="Markdown")
         return
     try:
-        user_id = int(args[0])
+        user_id = int(value_args[0])
     except ValueError:
         await update.message.reply_text("USER_ID must be a number.")
         return
     remove_paid_user(user_id)
-    await update.message.reply_text(f"❌ User {user_id} removed from paid tier.")
+    await update.message.reply_text(f"❌ User `{user_id}` removed from paid tier.", parse_mode="Markdown")
 
 
 @owner_only
 async def cmd_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/members — list all paid members."""
+    """/members KEY — list all paid members. Requires MASTER_KEY."""
+    args = context.args or []
+    if not _has_master_key(args):
+        await update.message.reply_text(
+            "🔒 Requires authorization.\n"
+            "Usage: `/members KEY`",
+            parse_mode="Markdown"
+        )
+        return
     members = list_paid_users()
     if not members:
         await update.message.reply_text("No paid members yet.")

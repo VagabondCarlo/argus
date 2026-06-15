@@ -602,23 +602,26 @@ async def cmd_wsb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @owner_only
 async def cmd_testbroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fire a live broadcast to both channels right now — owner only."""
+    import time as _time
     from analyst.signals.broadcaster import run_broadcast
     tier1 = config.TIER1_CHANNEL_ID
     tier2 = config.TIER2_CHANNEL_ID
     if not tier1 or not tier2:
         await update.message.reply_text("❌ Channel IDs not set in .env")
         return
-    await update.message.reply_text(
-        f"🔁 Firing test broadcast to both channels now...\n"
-        f"Tier 1: `{tier1}`\nTier 2: `{tier2}`",
-        parse_mode="Markdown"
+    status_msg = await update.message.reply_text(
+        "⏳ Scanning markets... fetching 30+ assets in parallel. Should fire in ~15s."
     )
+    t0 = _time.time()
     try:
         total = await run_broadcast(context.bot, tier1, tier2, time_slot="morning")
-        await update.message.reply_text(f"✅ Broadcast complete — {total} signals sent.")
+        elapsed = round(_time.time() - t0)
+        await status_msg.edit_text(
+            f"✅ Broadcast fired to both channels in {elapsed}s — {total} signals published."
+        )
     except Exception as e:
         logger.error(f"Test broadcast failed: {e}")
-        await update.message.reply_text(f"❌ Broadcast failed: {e}")
+        await status_msg.edit_text(f"❌ Broadcast failed: {e}")
 
 
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):

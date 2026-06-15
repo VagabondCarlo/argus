@@ -8,22 +8,19 @@ Tier 2 (paid, private): top 3 per class, full entry/stop/target, committee reaso
 """
 
 import logging
-from datetime import date, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from analyst.data.multi_asset import scan_forex, scan_metals, scan_crypto, fetch_asset_news
-from analyst.sentiment.analyzer_extended import analyze_extended
+from analyst.data.multi_asset import get_extended_snapshot
+from analyst.data.universe_extended import FOREX_PAIRS, METALS_PAIRS, CRYPTO_PAIRS
 from analyst.sentiment.analyzer import get_spy_context
 from analyst.data.market import get_market_snapshot
-from analyst.data.news import fetch_news, format_news_for_prompt
-from analyst.sentiment.analyzer import analyze_ticker
 from analyst.signals.execution import format_execution_tier1, format_execution_tier2
 
 logger = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
 
-# Top 15 liquid stocks scanned for the daily broadcast (separate from full trading scan)
 BROADCAST_STOCKS = [
     "AAPL", "NVDA", "MSFT", "TSLA", "META",
     "GOOGL", "AMZN", "AMD", "SPY", "QQQ",
@@ -31,97 +28,97 @@ BROADCAST_STOCKS = [
 ]
 
 
-def _analyze_asset(snapshot: dict, spy_change: float, market_regime: str) -> dict | None:
-    """Thread worker: fetch news + run LLM on one asset."""
-    ticker = snapshot["ticker"]
-    asset_type = snapshot.get("asset_type")
-    try:
-        if asset_type:
-            news_text = fetch_asset_news(ticker)
-            return analyze_extended(snapshot, news_text, spy_change, market_regime)
-        else:
-            from analyst.data.news import fetch_news, format_news_for_prompt
-            news = fetch_news(ticker)
-            news_text = format_news_for_prompt(news)
-            signal = analyze_ticker(snapshot, news_text, spy_change, market_regime)
-            if signal:
-                signal["display_name"] = ticker
-                signal["asset_type"] = "stock"
-                signal["price"] = snapshot["price"]
-            return signal
-    except Exception as e:
-        logger.error(f"Error analyzing {ticker}: {e}")
-        return None
+def _score_snapshot(snap: dict) -> dict:
+    """
+    Pure technical scoring — no LLM. Runs in <1ms per asset.
+    Signals are ranked by a weighted combination of RSI, MACD, EMA, volume, and momentum.
+    """
+    rsi   = snap.get("rsi", 50)
+    ema   = snap.get("ema_trend", "neutral")
+    macd  = snap.get("macd_cross", "neutral")
+    bb    = snap.get("bb_pct", 0.5)
+    vol   = snap.get("volume_ratio", 1.0)
+    chg   = snap.get("price_change_pct", 0.0)
+    price = snap.get("price", 0)
+    asset = snap.get("asset_type", "stock")
 
+    # --- BUY pressure signals ---
+    buy_score = 0.0
+    buy_score += 0.14 if rsi < 30 else 0.09 if rsi < 40 else 0.04 if rsi < 50 else 0.0
+    buy_score += 0.12 if macd == "bullish" else 0.0
+    buy_score += 0.08 if ema == "up" else 0.0
+    buy_score += 0.06 if bb < 0.20 else 0.0
+    buy_score += 0.05 if vol > 1.5 else 0.02 if vol > 1.2 else 0.0
+    buy_score += 0.04 if chg > 1.5 else 0.02 if chg > 0.5 else 0.0
 
-def _snapshot_to_watchlist(snap: dict) -> dict:
-    """Convert a raw snapshot to a watchlist entry when no LLM signal passes."""
-    rsi = snap.get("rsi", 50)
-    ema = snap.get("ema_trend", "neutral")
-    macd = snap.get("macd_cross", "neutral")
-    vol = snap.get("volume_ratio", 1.0)
-    change = snap.get("price_change_pct", 0.0)
+    # --- SELL pressure signals ---
+    sell_score = 0.0
+    sell_score += 0.14 if rsi > 70 else 0.09 if rsi > 60 else 0.04 if rsi > 55 else 0.0
+    sell_score += 0.12 if macd == "bearish" else 0.0
+    sell_score += 0.08 if ema == "down" else 0.0
+    sell_score += 0.06 if bb > 0.80 else 0.0
+    sell_score += 0.05 if vol > 1.5 else 0.02 if vol > 1.2 else 0.0
+    sell_score += 0.04 if chg < -1.5 else 0.02 if chg < -0.5 else 0.0
 
-    # Score purely on technicals — no LLM required
-    score = 0.50
-    if rsi < 35: score += 0.08
-    if rsi > 65: score += 0.06
-    if macd == "bullish": score += 0.07
-    if macd == "bearish": score += 0.05
-    if ema == "up": score += 0.05
-    if vol > 1.5: score += 0.05
-    score = min(score, 0.74)
+    if buy_score >= sell_score and buy_score >= 0.15:
+        action = "BUY"
+        conf = round(min(0.50 + buy_score, 0.82), 2)
+        mult_long  = 1.04 if asset == "stock" else 1.02
+        mult_stop  = 0.98 if asset == "stock" else 0.99
+    elif sell_score > buy_score and sell_score >= 0.15:
+        action = "SELL"
+        conf = round(min(0.50 + sell_score, 0.82), 2)
+        mult_long  = 0.96 if asset == "stock" else 0.98
+        mult_stop  = 1.02 if asset == "stock" else 1.01
+    else:
+        action = "WATCH"
+        conf = round(min(0.50 + max(buy_score, sell_score), 0.65), 2)
+        mult_long  = 1.02
+        mult_stop  = 0.99
 
-    action = "BUY" if (rsi < 50 and ema == "up") or macd == "bullish" else \
-             "SELL" if (rsi > 60 and ema == "down") or macd == "bearish" else "WATCH"
+    rsi_label = "oversold" if rsi < 35 else "overbought" if rsi > 65 else f"{rsi:.0f}"
+    reasoning = (
+        f"RSI {rsi:.0f} ({rsi_label}), EMA {ema}, MACD {macd}, "
+        f"BB {bb:.2f}, vol {vol:.1f}x avg, session {chg:+.2f}%."
+    )
 
     return {
-        "ticker": snap["ticker"],
+        "ticker":       snap["ticker"],
         "display_name": snap.get("display_name", snap["ticker"]),
-        "asset_type": snap.get("asset_type", "stock"),
-        "action": action,
-        "confidence": round(score, 2),
-        "price": snap.get("price", 0),
-        "price_target": round(snap.get("price", 0) * 1.03, 4),
-        "stop_loss": round(snap.get("price", 0) * 0.98, 4),
-        "risk_reward": 1.5,
-        "setup_type": "technical-watchlist",
+        "asset_type":   asset,
+        "action":       action,
+        "confidence":   conf,
+        "price":        price,
+        "price_target": round(price * mult_long, 4),
+        "stop_loss":    round(price * mult_stop, 4),
+        "risk_reward":  round(abs(mult_long - 1) / abs(1 - mult_stop), 1) if mult_stop != 1 else 1.5,
+        "setup_type":   "technical",
         "time_horizon": "1–3 days",
-        "reasoning": (
-            f"RSI {rsi:.0f} ({'oversold' if rsi < 35 else 'overbought' if rsi > 65 else 'neutral'}), "
-            f"EMA trend {ema}, MACD {macd}, volume {vol:.1f}x avg, "
-            f"session change {change:+.2f}%."
-        ),
-        "red_flags": "none",
+        "reasoning":    reasoning,
+        "red_flags":    "none",
     }
 
 
-def _scan_class(snapshots: list[dict], spy_change: float, market_regime: str, max_workers: int = 4) -> list[dict]:
-    """Scan snapshots concurrently. Falls back to technical watchlist if LLM returns nothing."""
-    signals = []
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(_analyze_asset, s, spy_change, market_regime): s for s in snapshots}
-        for fut in as_completed(futures):
-            result = fut.result()
-            if result and result.get("action") != "HOLD" and result.get("confidence", 0) >= 0.55:
-                signals.append(result)
-
-    if signals:
-        return sorted(signals, key=lambda s: s["confidence"], reverse=True)
-
-    # Fallback: rank by technicals so there's always something to show
-    watchlist = [_snapshot_to_watchlist(s) for s in snapshots if s]
-    return sorted(watchlist, key=lambda s: s["confidence"], reverse=True)
+def _fetch_stock_snapshot(ticker: str) -> dict | None:
+    snap = get_market_snapshot(ticker)
+    if snap:
+        snap["display_name"] = ticker
+        snap["asset_type"] = "stock"
+    return snap
 
 
-def _scan_broadcast_stocks(spy_change: float, market_regime: str) -> list[dict]:
-    """Quick scan of top liquid stocks for broadcast picks."""
+def _scan_class(fetch_fn, tickers) -> list[dict]:
+    """Fetch snapshots in parallel, score instantly with pure technicals. No LLM."""
     snapshots = []
-    for ticker in BROADCAST_STOCKS:
-        snap = get_market_snapshot(ticker)
-        if snap:
-            snapshots.append(snap)
-    return _scan_class(snapshots, spy_change, market_regime)
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futures = [ex.submit(fetch_fn, t) for t in tickers]
+        for fut in as_completed(futures):
+            snap = fut.result()
+            if snap:
+                snapshots.append(_score_snapshot(snap))
+
+    order = {"BUY": 0, "SELL": 1, "WATCH": 2}
+    return sorted(snapshots, key=lambda s: (order.get(s["action"], 3), -s["confidence"]))
 
 
 def _conf_bar(confidence: float) -> str:
@@ -165,12 +162,14 @@ def format_tier1_broadcast(
     Free public channel — one pick per asset class, second-best signal.
     The top pick is reserved for Tier 2 (paid). Clear upgrade path shown.
     """
-    today = datetime.now(ET).strftime("%A, %B %d %Y")
+    now = datetime.now(ET)
+    today = now.strftime("%A, %B %d %Y")
+    ts = now.strftime("%-I:%M %p ET")
     emoji, slot_title, slot_sub = _SLOT_HEADERS.get(time_slot, _SLOT_HEADERS["morning"])
     lines = [
         f"{emoji} <b>ARGUS — {slot_title}</b>",
         f"<i>{today}  ·  {slot_sub}</i>",
-        f"Market: <b>{market_regime.split(' — ')[0].upper()}</b>",
+        f"Market: <b>{market_regime.split(' — ')[0].upper()}</b>  |  <i>Data: {ts}</i>",
         "",
     ]
 
@@ -325,26 +324,34 @@ async def send_channel_message(bot, channel_id: str, text: str):
         logger.error(f"Failed to send to channel {channel_id}: {e}")
 
 
+def _fetch_extended(args):
+    ticker, name, asset_type = args
+    snap = get_extended_snapshot(ticker, name, asset_type)
+    return snap
+
+
 async def run_broadcast(bot, tier1_channel: str, tier2_channel: str, time_slot: str = "morning"):
     """
-    Full broadcast pipeline:
-    1. Get SPY context
-    2. Scan stocks, forex, metals, crypto concurrently
-    3. Format Tier 1 + Tier 2 messages with time-slot framing
-    4. Send to both channels
+    Fast broadcast pipeline — pure technical scoring, no LLM.
+    All data fetches run in parallel; scoring is instant math.
+    Typical wall-clock time: 5–15 seconds.
     """
-    logger.info(f"Starting {time_slot} multi-asset broadcast scan...")
+    logger.info(f"Starting {time_slot} broadcast (fast technical mode)...")
 
     spy_change, market_regime = get_spy_context()
 
+    forex_tickers  = [(t, n, "forex")  for t, n in FOREX_PAIRS.items()]
+    metals_tickers = [(t, n, "metal")  for t, n in METALS_PAIRS.items()]
+    crypto_tickers = [(t, n, "crypto") for t, n in CRYPTO_PAIRS.items()]
+
     with ThreadPoolExecutor(max_workers=4) as ex:
-        f_stocks = ex.submit(_scan_broadcast_stocks, spy_change, market_regime)
-        f_forex = ex.submit(lambda: _scan_class(scan_forex(), spy_change, market_regime))
-        f_metals = ex.submit(lambda: _scan_class(scan_metals(), spy_change, market_regime))
-        f_crypto = ex.submit(lambda: _scan_class(scan_crypto(), spy_change, market_regime))
+        f_stocks = ex.submit(_scan_class, _fetch_stock_snapshot, BROADCAST_STOCKS)
+        f_forex  = ex.submit(_scan_class, _fetch_extended, forex_tickers)
+        f_metals = ex.submit(_scan_class, _fetch_extended, metals_tickers)
+        f_crypto = ex.submit(_scan_class, _fetch_extended, crypto_tickers)
 
         stocks = f_stocks.result()
-        forex = f_forex.result()
+        forex  = f_forex.result()
         metals = f_metals.result()
         crypto = f_crypto.result()
 

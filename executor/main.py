@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Argus Executor", lifespan=lifespan)
+app = FastAPI(title="Argus Executor", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 _bearer = HTTPBearer()
 

@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Argus Analyst Agent", lifespan=lifespan)
+app = FastAPI(title="Argus Analyst Agent", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
 def scan_loop():

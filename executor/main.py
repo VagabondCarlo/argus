@@ -210,7 +210,7 @@ def audit_signal(body: AuditRequest):
     return result
 
 
-@app.get("/status")
+@app.get("/status", dependencies=[Depends(_require_internal)])
 def status():
     account = get_account()
     return {

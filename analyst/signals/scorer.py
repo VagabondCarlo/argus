@@ -202,6 +202,7 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         try:
             httpx.post(
                 f"http://{config.EXECUTOR_HOST}:{config.EXECUTOR_PORT}/audit",
+                headers={"Authorization": f"Bearer {config.MASTER_KEY}"},
                 json={
                     "ticker": s["ticker"],
                     "action": s["action"],

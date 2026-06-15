@@ -1,7 +1,8 @@
 import logging
 import threading
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from shared.config import config
 from shared.database import init_db, get_todays_signals, get_todays_trades, get_trade_history, get_conn
@@ -35,6 +36,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Argus Executor", lifespan=lifespan)
+
+_bearer = HTTPBearer()
+
+def _require_internal(credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
+    """All control endpoints require the master key as a Bearer token."""
+    if credentials.credentials != config.MASTER_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # ── Signal watcher ─────────────────────────────────────────────────────────────
@@ -173,7 +181,7 @@ class AuditRequest(BaseModel):
     red_flags: str = "none"
 
 
-@app.post("/audit")
+@app.post("/audit", dependencies=[Depends(_require_internal)])
 def audit_signal(body: AuditRequest):
     """Receive a signal from the Analyst and run the independent Risk Desk audit."""
     signal = body.model_dump()
@@ -215,7 +223,7 @@ def status():
     }
 
 
-@app.post("/control/pause")
+@app.post("/control/pause", dependencies=[Depends(_require_internal)])
 def pause():
     global _paused
     _paused = True
@@ -223,7 +231,7 @@ def pause():
     return {"paused": True}
 
 
-@app.post("/control/resume")
+@app.post("/control/resume", dependencies=[Depends(_require_internal)])
 def resume():
     global _paused
     _paused = False
@@ -231,7 +239,7 @@ def resume():
     return {"paused": False}
 
 
-@app.post("/control/stop")
+@app.post("/control/stop", dependencies=[Depends(_require_internal)])
 def emergency_stop():
     global _stopped, _paused
     _stopped = True
@@ -245,7 +253,7 @@ class ThresholdUpdate(BaseModel):
     value: float
 
 
-@app.post("/control/threshold")
+@app.post("/control/threshold", dependencies=[Depends(_require_internal)])
 def set_threshold(body: ThresholdUpdate):
     if not 0.50 <= body.value <= 1.0:
         raise HTTPException(status_code=400, detail="Threshold must be between 0.50 and 1.00")
@@ -268,4 +276,4 @@ def _build_daily_report() -> dict:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("executor.main:app", host="0.0.0.0", port=config.EXECUTOR_PORT, reload=False)
+    uvicorn.run("executor.main:app", host="127.0.0.1", port=config.EXECUTOR_PORT, reload=False)

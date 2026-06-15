@@ -599,6 +599,28 @@ async def cmd_wsb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await cmd_social(update, context)
 
 
+@owner_only
+async def cmd_testbroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Fire a live broadcast to both channels right now — owner only."""
+    from analyst.signals.broadcaster import run_broadcast
+    tier1 = config.TIER1_CHANNEL_ID
+    tier2 = config.TIER2_CHANNEL_ID
+    if not tier1 or not tier2:
+        await update.message.reply_text("❌ Channel IDs not set in .env")
+        return
+    await update.message.reply_text(
+        f"🔁 Firing test broadcast to both channels now...\n"
+        f"Tier 1: `{tier1}`\nTier 2: `{tier2}`",
+        parse_mode="Markdown"
+    )
+    try:
+        total = await run_broadcast(context.bot, tier1, tier2, time_slot="morning")
+        await update.message.reply_text(f"✅ Broadcast complete — {total} signals sent.")
+    except Exception as e:
+        logger.error(f"Test broadcast failed: {e}")
+        await update.message.reply_text(f"❌ Broadcast failed: {e}")
+
+
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_predictions(signals), parse_mode="Markdown")
@@ -827,6 +849,7 @@ def run_bot():
     app.add_handler(CommandHandler("upgrade", cmd_upgrade))
     app.add_handler(CommandHandler("social", cmd_social))
     app.add_handler(CommandHandler("wsb", cmd_wsb))
+    app.add_handler(CommandHandler("testbroadcast", cmd_testbroadcast))
 
     # Callbacks (owner + guest)
     app.add_handler(CallbackQueryHandler(callback_handler))

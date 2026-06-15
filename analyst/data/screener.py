@@ -28,7 +28,10 @@ def _quick_screen(ticker: str) -> dict | None:
         if df.empty or len(df) < 20:
             return None
 
-        df.columns = [c.lower() for c in df.columns]
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [col[0].lower() for col in df.columns]
+        else:
+            df.columns = [c.lower() for c in df.columns]
         latest = df.iloc[-1]
         prev = df.iloc[-2]
 

@@ -105,12 +105,17 @@ def get_spy_context() -> tuple[float, str]:
     """Get SPY's current daily change for market regime context."""
     try:
         import yfinance as yf
+        import pandas as pd
         spy = yf.download("SPY", period="2d", interval="1d",
                           progress=False, auto_adjust=True)
         if len(spy) >= 2:
-            change = float(
-                (spy["Close"].iloc[-1] - spy["Close"].iloc[-2]) / spy["Close"].iloc[-2] * 100
-            )
+            # Flatten MultiIndex if yfinance returns ("Close", "SPY") tuple columns
+            close_col = spy["Close"]
+            if isinstance(close_col, pd.DataFrame):
+                close_col = close_col.iloc[:, 0]
+            prev = float(close_col.iloc[-2])
+            last = float(close_col.iloc[-1])
+            change = (last - prev) / prev * 100
             if change > 1.0:
                 regime = "bullish — broad market trending up"
             elif change < -1.0:
@@ -120,7 +125,7 @@ def get_spy_context() -> tuple[float, str]:
             return round(change, 2), regime
     except Exception:
         pass
-    return 0.0, "unknown"
+    return 0.0, "neutral — market data unavailable"
 
 
 def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, market_regime: str = "unknown", enrichment_text: str = "") -> dict | None:

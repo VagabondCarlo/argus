@@ -20,7 +20,10 @@ def _fetch_ohlcv(ticker: str, period: str = "60d", interval: str = "1d") -> pd.D
                          progress=False, auto_adjust=True)
         if df.empty or len(df) < 22:
             return None
-        df.columns = [c.lower() for c in df.columns]
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [col[0].lower() for col in df.columns]
+        else:
+            df.columns = [c.lower() for c in df.columns]
         return df
     except Exception as e:
         logger.debug(f"Failed to fetch {ticker}: {e}")

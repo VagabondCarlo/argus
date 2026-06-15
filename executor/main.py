@@ -19,10 +19,12 @@ from analyst.data.market import get_market_snapshot
 from analyst.sentiment.analyzer import get_spy_context
 from datetime import datetime
 import time as time_module
+import secrets
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_state_lock = threading.Lock()
 _paused = False
 _stopped = False
 
@@ -41,7 +43,7 @@ _bearer = HTTPBearer()
 
 def _require_internal(credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
     """All control endpoints require the master key as a Bearer token."""
-    if credentials.credentials != config.MASTER_KEY:
+    if not secrets.compare_digest(credentials.credentials, config.MASTER_KEY):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -49,8 +51,13 @@ def _require_internal(credentials: HTTPAuthorizationCredentials = Depends(_beare
 
 def signal_watcher_loop():
     """Checks for pending high-confidence signals every 5 minutes."""
-    while not _stopped:
-        if not _paused:
+    while True:
+        with _state_lock:
+            stopped = _stopped
+            paused = _paused
+        if stopped:
+            break
+        if not paused:
             try:
                 process_pending_signals()
             except Exception as e:
@@ -213,9 +220,11 @@ def audit_signal(body: AuditRequest):
 @app.get("/status", dependencies=[Depends(_require_internal)])
 def status():
     account = get_account()
+    with _state_lock:
+        paused, stopped = _paused, _stopped
     return {
-        "paused": _paused,
-        "stopped": _stopped,
+        "paused": paused,
+        "stopped": stopped,
         "trades_this_week": get_weekly_trade_count(),
         "account": account,
         "daily_report": _build_daily_report(),
@@ -226,7 +235,8 @@ def status():
 @app.post("/control/pause", dependencies=[Depends(_require_internal)])
 def pause():
     global _paused
-    _paused = True
+    with _state_lock:
+        _paused = True
     send_sync_notification("⏸ *Argus paused* — no trades will execute until resumed.")
     return {"paused": True}
 
@@ -234,7 +244,8 @@ def pause():
 @app.post("/control/resume", dependencies=[Depends(_require_internal)])
 def resume():
     global _paused
-    _paused = False
+    with _state_lock:
+        _paused = False
     send_sync_notification("▶️ *Argus resumed* — monitoring signals.")
     return {"paused": False}
 
@@ -242,8 +253,9 @@ def resume():
 @app.post("/control/stop", dependencies=[Depends(_require_internal)])
 def emergency_stop():
     global _stopped, _paused
-    _stopped = True
-    _paused = True
+    with _state_lock:
+        _stopped = True
+        _paused = True
     result = close_all_positions()
     send_sync_notification("🛑 *Emergency stop executed.* All positions closed. Argus halted.")
     return {"stopped": True, "positions_closed": result}

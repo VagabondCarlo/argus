@@ -1,8 +1,10 @@
 import logging
+import secrets
 import threading
 import time as time_module
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from shared.config import config
 from shared.database import init_db, get_todays_signals
 from analyst.signals.scorer import run_scan, is_market_hours, is_premarket
@@ -23,6 +25,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Argus Analyst Agent", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+_bearer = HTTPBearer()
+
+def _require_internal(credentials: HTTPAuthorizationCredentials = Depends(_bearer)):
+    if not secrets.compare_digest(credentials.credentials, config.MASTER_KEY):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def scan_loop():
@@ -58,7 +66,7 @@ def scan_loop():
             time_module.sleep(60)
 
 
-@app.get("/status")
+@app.get("/status", dependencies=[Depends(_require_internal)])
 def status():
     signals = get_todays_signals(min_confidence=0.60)
     actionable = [s for s in signals if s["confidence"] >= config.CONFIDENCE_THRESHOLD]

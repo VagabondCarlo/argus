@@ -261,11 +261,20 @@ def get_crypto_sentiment(ticker: str) -> dict:
 
 # ── On-demand browser fetch (for OpenClaw integration) ───────────────────────
 
+_ALLOWED_SCHEMES = {"https", "http"}
+_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
+
 def browse_url(url: str, question: str = "") -> str:
     """
     Browse any URL with headless Chromium and return the page text.
-    Used when OpenClaw or the Telegram bot requests a live page lookup.
+    Blocked: localhost, internal IPs, non-http(s) schemes (prevents SSRF).
     """
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        return "URL not allowed: only http/https supported."
+    if parsed.hostname and parsed.hostname.lower() in _BLOCKED_HOSTS:
+        return "URL not allowed: internal addresses are blocked."
     content = _run(_fetch_page(url, timeout=20000))
     if not content:
         return "Could not load the page."

@@ -80,8 +80,10 @@ async def _get_analyst_status() -> dict:
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(f"http://{config.ANALYST_HOST}:{config.ANALYST_PORT}/status")
+            r.raise_for_status()
             return r.json()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Analyst status check failed: {e}")
         return {"error": "Analyst agent unreachable"}
 
 
@@ -92,21 +94,25 @@ async def _get_executor_status() -> dict:
                 f"http://{config.EXECUTOR_HOST}:{config.EXECUTOR_PORT}/status",
                 headers={"Authorization": f"Bearer {config.MASTER_KEY}"},
             )
+            r.raise_for_status()
             return r.json()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Executor status check failed: {e}")
         return {"error": "Executor agent unreachable"}
 
 
-async def _post_executor(endpoint: str, payload: dict = {}) -> dict:
+async def _post_executor(endpoint: str, payload: dict | None = None) -> dict:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
                 f"http://{config.EXECUTOR_HOST}:{config.EXECUTOR_PORT}{endpoint}",
-                json=payload,
+                json=payload or {},
                 headers={"Authorization": f"Bearer {config.MASTER_KEY}"},
             )
+            r.raise_for_status()
             return r.json()
     except Exception as e:
+        logger.error(f"Executor POST {endpoint} failed: {e}")
         return {"error": str(e)}
 
 
@@ -296,8 +302,8 @@ async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     result = await _post_executor("/control/pause")
-    msg = "⏸ Trading paused. Send `/resume {key}` to restart.".replace("{key}", "••••••") if "error" not in result else f"❌ {result['error']}"
-    await update.message.reply_text("⏸ Trading paused. Send /resume to restart.")
+    msg = "⏸ Trading paused. Send /resume to restart." if "error" not in result else f"❌ {result['error']}"
+    await update.message.reply_text(msg)
 
 
 @owner_only
@@ -504,7 +510,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Guest commands ─────────────────────────────────────────────────────────────
 
+async def _guest_rate_check(update: Update) -> bool:
+    """Returns True if the user is blocked by rate limit. Sends the block message."""
+    if is_owner(update):
+        return False
+    user_id = update.effective_user.id
+    if is_paid_user(user_id):
+        return False
+    blocked, msg = check_rate_limit(user_id)
+    if blocked:
+        await update.message.reply_text(msg)
+    return blocked
+
+
 async def cmd_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _guest_rate_check(update):
+        return
     await update.message.reply_text("Fetching top market headlines...", parse_mode="HTML")
     articles = get_market_news(max_articles=3)
     await update.message.reply_text(format_news_report(articles), parse_mode="HTML", disable_web_page_preview=True)
@@ -648,16 +669,22 @@ async def cmd_testbroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _guest_rate_check(update):
+        return
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_predictions(signals), parse_mode="Markdown")
 
 
 async def cmd_suggestions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _guest_rate_check(update):
+        return
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_suggestions(signals), parse_mode="Markdown")
 
 
 async def cmd_setups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _guest_rate_check(update):
+        return
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_high_probability(signals), parse_mode="Markdown")
 
@@ -759,7 +786,8 @@ async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             options={"temperature": 0.4}
         )
         reply = response["message"]["content"].strip()
-    except Exception:
+    except Exception as e:
+        logger.error(f"Guest LLM failed: {e}")
         reply = (
             "I'm focused on one thing — finding high-probability trades. "
             "Ask me about the market, today's signals, or use /predictions to see what I'm watching."
@@ -819,7 +847,8 @@ async def owner_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             options={"temperature": 0.3}
         )
         reply = response["message"]["content"].strip()
-    except Exception:
+    except Exception as e:
+        logger.error(f"Owner chat LLM failed: {e}")
         reply = "System is running. Use /status for a full readout."
 
     await update.message.reply_text(reply)

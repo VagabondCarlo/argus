@@ -1,7 +1,7 @@
 import logging
 import httpx
 import functools
-from datetime import time
+from datetime import time, datetime, timedelta
 from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -11,7 +11,9 @@ from telegram.ext import (
 from shared.config import config
 from shared.database import (
     init_db, get_todays_signals, get_todays_trades,
-    get_todays_stats, get_trade_history
+    get_todays_stats, get_trade_history,
+    is_paid_user, add_paid_user, remove_paid_user, list_paid_users,
+    count_recent_questions, record_question, RATE_LIMIT_MAX, RATE_LIMIT_HOURS,
 )
 from notifications.reports import (
     premarket_report, midday_report, aftermarket_report,
@@ -19,6 +21,7 @@ from notifications.reports import (
 )
 from analyst.data.market_news import get_market_news, format_news_report
 from analyst.data.browser_scraper import get_browser_enrichment, get_stocktwits_sentiment, browse_url
+from analyst.data.openclaw_client import ask_openclaw, needs_live_research, build_research_prompt, is_openclaw_available
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +45,33 @@ def owner_only(func):
             return
         return await func(update, context)
     return wrapper
+
+
+# ── Rate limit helper ─────────────────────────────────────────────────────────
+
+def check_rate_limit(user_id: int) -> tuple[bool, str]:
+    """
+    Returns (is_blocked, message).
+    Guests get RATE_LIMIT_MAX free questions per RATE_LIMIT_HOURS hours.
+    Keyed by Telegram user_id — stable across devices and sessions.
+    """
+    count, oldest_iso = count_recent_questions(user_id)
+    if count < RATE_LIMIT_MAX:
+        return False, ""
+
+    # Calculate reset time in ET
+    oldest_utc = datetime.fromisoformat(oldest_iso).replace(tzinfo=ZoneInfo("UTC"))
+    reset_utc   = oldest_utc + timedelta(hours=RATE_LIMIT_HOURS)
+    reset_et    = reset_utc.astimezone(ZoneInfo("America/New_York"))
+    reset_str   = reset_et.strftime("%-I:%M %p ET")
+
+    msg = (
+        f"You've used your {RATE_LIMIT_MAX} free questions for this {RATE_LIMIT_HOURS}-hour window.\n\n"
+        f"Your questions reset at <b>{reset_str}</b>.\n\n"
+        f"Want unlimited questions, full top-3 picks, and deep analysis?\n"
+        f"<b>Upgrade to Argus Pro</b> — reply <b>UPGRADE</b> or DM @ArgusVagabondBot for details."
+    )
+    return True, msg
 
 
 # ── Agent communication ────────────────────────────────────────────────────────
@@ -323,6 +353,63 @@ async def cmd_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ── Paid member management (owner only) ───────────────────────────────────────
+
+@owner_only
+async def cmd_addpaid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /addpaid USER_ID [note]
+    Promotes a Telegram user to paid tier (unlimited questions).
+    Get a user's ID by forwarding their message to @userinfobot.
+    """
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(
+            "Usage: /addpaid USER_ID [note]\n"
+            "Example: /addpaid 123456789 Paid via PayPal June 2026\n\n"
+            "Tip: forward their message to @userinfobot to get their ID."
+        )
+        return
+    try:
+        user_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("USER_ID must be a number.")
+        return
+    note = " ".join(args[1:]) if len(args) > 1 else ""
+    add_paid_user(user_id, note=note)
+    await update.message.reply_text(f"✅ User {user_id} added to paid tier.\n_{note}_", parse_mode="Markdown")
+
+
+@owner_only
+async def cmd_removepaid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/removepaid USER_ID — revokes paid access."""
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("Usage: /removepaid USER_ID")
+        return
+    try:
+        user_id = int(args[0])
+    except ValueError:
+        await update.message.reply_text("USER_ID must be a number.")
+        return
+    remove_paid_user(user_id)
+    await update.message.reply_text(f"❌ User {user_id} removed from paid tier.")
+
+
+@owner_only
+async def cmd_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/members — list all paid members."""
+    members = list_paid_users()
+    if not members:
+        await update.message.reply_text("No paid members yet.")
+        return
+    lines = [f"*Paid Members ({len(members)})*\n"]
+    for m in members:
+        note = f" — {m['note']}" if m.get("note") else ""
+        lines.append(f"• `{m['user_id']}`{note} _(since {m['added_at'][:10]})_")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
 # ── Callback handler ───────────────────────────────────────────────────────────
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -418,6 +505,31 @@ async def cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Research fetch failed. Try again shortly.")
 
 
+async def cmd_upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tell guests how to become a paid member."""
+    user_id = update.effective_user.id
+    if is_paid_user(user_id):
+        await update.message.reply_text(
+            "✅ You already have Argus Pro access.\n\n"
+            "You get unlimited questions, full top-3 picks per asset class, "
+            "and deep committee analysis every broadcast."
+        )
+        return
+    count, _ = count_recent_questions(user_id)
+    remaining = max(0, RATE_LIMIT_MAX - count)
+    await update.message.reply_text(
+        "<b>Argus Pro — What You Get</b>\n\n"
+        "✅ Unlimited questions to @ArgusVagabondBot\n"
+        "✅ Top 3 picks per asset class (stocks, forex, metals, crypto)\n"
+        "✅ Full committee analysis + entry/stop/target\n"
+        "✅ Execution suggestions for every signal\n"
+        "✅ Priority access to new features\n\n"
+        f"<i>Free tier: {remaining} of {RATE_LIMIT_MAX} questions remaining this window.</i>\n\n"
+        "To upgrade, contact the admin. Pricing details coming soon.",
+        parse_mode="HTML"
+    )
+
+
 async def cmd_predictions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     signals = get_todays_signals(min_confidence=0.60)
     await update.message.reply_text(guest_predictions(signals), parse_mode="Markdown")
@@ -437,14 +549,30 @@ async def cmd_setups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles all messages from non-owner users — guest experience."""
-    user_text = update.message.text or ""
+    user_text = (update.message.text or "").strip()
+    user_id   = update.effective_user.id
 
-    # First message or a command-style opener — show welcome
+    # Command-style or empty — show welcome (never counts against rate limit)
     if not user_text or user_text.startswith("/"):
         await update.message.reply_text(guest_welcome(), parse_mode="Markdown")
         return
 
-    # Free-text message — run through the guest conversational LLM
+    # "UPGRADE" shortcut
+    if user_text.upper() in ("UPGRADE", "UPGRADE NOW", "GO PRO"):
+        await cmd_upgrade(update, context)
+        return
+
+    paid = is_paid_user(user_id)
+
+    # Rate limit check for free (non-paid) users
+    if not paid:
+        blocked, limit_msg = check_rate_limit(user_id)
+        if blocked:
+            await update.message.reply_text(limit_msg, parse_mode="HTML")
+            return
+        record_question(user_id)
+
+    # Free-text message — route through OpenClaw for live research, Ollama for general chat
     try:
         signals = get_todays_signals(min_confidence=0.60)
         signal_summary = (
@@ -452,6 +580,19 @@ async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Highest confidence: {max((s['confidence'] for s in signals), default=0):.0%}."
             if signals else "No signals generated yet today."
         )
+
+        # Live research path — OpenClaw browses the web
+        if needs_live_research(user_text) and is_openclaw_available():
+            research_prompt = build_research_prompt(user_text)
+            research_result = ask_openclaw(research_prompt)
+            if research_result:
+                reply = (
+                    f"🔍 {research_result}\n\n"
+                    "_Live research via Argus browser agent. One suggestion to consider — "
+                    "do your own research before making any decisions._"
+                )
+                await update.message.reply_text(reply, parse_mode="Markdown")
+                return
 
         import ollama
         response = ollama.chat(
@@ -525,6 +666,17 @@ async def owner_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Active signals: {len(signals)}."
         )
 
+        # Live research path — owner gets OpenClaw research too
+        if needs_live_research(user_text) and is_openclaw_available():
+            research_prompt = build_research_prompt(user_text)
+            research_result = ask_openclaw(research_prompt)
+            if research_result:
+                await update.message.reply_text(
+                    f"🔍 *Live Research*\n\n{research_result}",
+                    parse_mode="Markdown"
+                )
+                return
+
         import ollama
         response = ollama.chat(
             model="llama3.1:8b",
@@ -586,6 +738,9 @@ def run_bot():
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("threshold", cmd_threshold))
     app.add_handler(CommandHandler("config", cmd_config))
+    app.add_handler(CommandHandler("addpaid", cmd_addpaid))
+    app.add_handler(CommandHandler("removepaid", cmd_removepaid))
+    app.add_handler(CommandHandler("members", cmd_members))
 
     # Guest commands (open to everyone)
     app.add_handler(CommandHandler("news", cmd_news))
@@ -593,6 +748,7 @@ def run_bot():
     app.add_handler(CommandHandler("suggestions", cmd_suggestions))
     app.add_handler(CommandHandler("setups", cmd_setups))
     app.add_handler(CommandHandler("research", cmd_research))
+    app.add_handler(CommandHandler("upgrade", cmd_upgrade))
 
     # Callbacks (owner + guest)
     app.add_handler(CallbackQueryHandler(callback_handler))

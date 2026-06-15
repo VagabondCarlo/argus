@@ -165,21 +165,44 @@ async def job_broadcast(context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = (
-        "👁 *Argus is online.*\n\n"
-        "*Reports:* Auto-delivered at 8:30 AM, 12:30 PM, 4:30 PM ET\n\n"
-        "*Commands:*\n"
-        "/status — system health\n"
-        "/account — balance & positions\n"
-        "/signals — pending signals\n"
-        "/report — today's summary\n"
-        "/history — last 10 trades\n"
-        "/pause — pause trading\n"
-        "/resume — resume trading\n"
-        "/stop — emergency stop\n"
-        "/threshold [value] — change confidence threshold\n"
-        "/config — view current settings"
-    )
+    owner = is_owner(update)
+    if owner:
+        msg = (
+            "👁 *Argus is online.*\n\n"
+            "*📊 Monitoring*\n"
+            "/status — system health & account\n"
+            "/account — balance & positions\n"
+            "/signals — pending signals\n"
+            "/report — today's summary\n"
+            "/history — last 10 trades\n"
+            "/config — current settings\n\n"
+            "*📡 Intelligence*\n"
+            "/news — market headlines\n"
+            "/social — scan all social platforms\n"
+            "/research [TICKER] — deep dive on a stock\n\n"
+            "*📣 Broadcast*\n"
+            "/testbroadcast — fire both channels now\n\n"
+            "*⚙️ Control*\n"
+            "/pause — pause trading\n"
+            "/resume — resume trading\n"
+            "/stop — emergency stop\n"
+            "/threshold [0.50–1.00] — change confidence threshold\n\n"
+            "*👥 Members*\n"
+            "/addpaid [key] [user\\_id] — add paid member\n"
+            "/removepaid [key] [user\\_id] — remove paid member\n"
+            "/members [key] — list paid members\n"
+        )
+    else:
+        msg = (
+            "👁 *Argus — Market Intelligence*\n\n"
+            "Real-time signals across stocks, forex, metals & crypto.\n\n"
+            "/predictions — today's top setups\n"
+            "/suggestions — what to watch\n"
+            "/setups — high-probability plays\n"
+            "/news — market headlines\n"
+            "/upgrade — go Pro for full analysis\n\n"
+            "_Ask me anything about the market._"
+        )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 

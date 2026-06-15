@@ -113,9 +113,12 @@ def _scan_class(fetch_fn, tickers) -> list[dict]:
     with ThreadPoolExecutor(max_workers=10) as ex:
         futures = [ex.submit(fetch_fn, t) for t in tickers]
         for fut in as_completed(futures):
-            snap = fut.result()
-            if snap:
-                snapshots.append(_score_snapshot(snap))
+            try:
+                snap = fut.result()
+                if snap:
+                    snapshots.append(_score_snapshot(snap))
+            except Exception as e:
+                logger.warning(f"Asset fetch failed, skipping: {e}")
 
     order = {"BUY": 0, "SELL": 1, "WATCH": 2}
     return sorted(snapshots, key=lambda s: (order.get(s["action"], 3), -s["confidence"]))

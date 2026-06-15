@@ -8,6 +8,7 @@ from analyst.data.market import get_market_snapshot
 from analyst.data.news import fetch_news, format_news_for_prompt
 from analyst.data.web_scraper import get_full_enrichment
 from analyst.data.browser_scraper import get_browser_enrichment
+from analyst.data.reddit_scraper import get_ticker_social_context
 from analyst.sentiment.analyzer import analyze_ticker, get_spy_context
 from shared.database import save_signal, get_todays_signals, get_conn
 from shared.config import config
@@ -108,10 +109,12 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         news_text = format_news_for_prompt(news)
 
         enrichment = get_full_enrichment(ticker)
-        browser   = get_browser_enrichment(ticker, asset_type="stock")
+        browser    = get_browser_enrichment(ticker, asset_type="stock")
+        social     = get_ticker_social_context(ticker)
         enrichment_text = "\n".join(filter(None, [
             enrichment.get("llm_context", ""),
             browser.get("llm_context", ""),
+            social.get("llm_context", ""),
         ]))
 
         signal = analyze_ticker(

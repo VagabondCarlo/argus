@@ -16,7 +16,11 @@ def fetch_historical(ticker: str, period: str = "30d", interval: str = "1d") -> 
         df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
         if df.empty:
             return None
-        df.columns = [c.lower() for c in df.columns]
+        # yfinance may return MultiIndex columns like ("Close", "AAPL") — flatten to scalar strings
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [col[0].lower() for col in df.columns]
+        else:
+            df.columns = [c.lower() for c in df.columns]
         return df
     except Exception as e:
         logger.error(f"Failed to fetch {ticker}: {e}")

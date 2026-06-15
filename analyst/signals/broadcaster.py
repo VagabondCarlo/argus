@@ -54,17 +54,64 @@ def _analyze_asset(snapshot: dict, spy_change: float, market_regime: str) -> dic
         return None
 
 
+def _snapshot_to_watchlist(snap: dict) -> dict:
+    """Convert a raw snapshot to a watchlist entry when no LLM signal passes."""
+    rsi = snap.get("rsi", 50)
+    ema = snap.get("ema_trend", "neutral")
+    macd = snap.get("macd_cross", "neutral")
+    vol = snap.get("volume_ratio", 1.0)
+    change = snap.get("price_change_pct", 0.0)
+
+    # Score purely on technicals — no LLM required
+    score = 0.50
+    if rsi < 35: score += 0.08
+    if rsi > 65: score += 0.06
+    if macd == "bullish": score += 0.07
+    if macd == "bearish": score += 0.05
+    if ema == "up": score += 0.05
+    if vol > 1.5: score += 0.05
+    score = min(score, 0.74)
+
+    action = "BUY" if (rsi < 50 and ema == "up") or macd == "bullish" else \
+             "SELL" if (rsi > 60 and ema == "down") or macd == "bearish" else "WATCH"
+
+    return {
+        "ticker": snap["ticker"],
+        "display_name": snap.get("display_name", snap["ticker"]),
+        "asset_type": snap.get("asset_type", "stock"),
+        "action": action,
+        "confidence": round(score, 2),
+        "price": snap.get("price", 0),
+        "price_target": round(snap.get("price", 0) * 1.03, 4),
+        "stop_loss": round(snap.get("price", 0) * 0.98, 4),
+        "risk_reward": 1.5,
+        "setup_type": "technical-watchlist",
+        "time_horizon": "1–3 days",
+        "reasoning": (
+            f"RSI {rsi:.0f} ({'oversold' if rsi < 35 else 'overbought' if rsi > 65 else 'neutral'}), "
+            f"EMA trend {ema}, MACD {macd}, volume {vol:.1f}x avg, "
+            f"session change {change:+.2f}%."
+        ),
+        "red_flags": "none",
+    }
+
+
 def _scan_class(snapshots: list[dict], spy_change: float, market_regime: str, max_workers: int = 4) -> list[dict]:
-    """Scan a list of snapshots concurrently and return actionable signals sorted by confidence."""
+    """Scan snapshots concurrently. Falls back to technical watchlist if LLM returns nothing."""
     signals = []
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {ex.submit(_analyze_asset, s, spy_change, market_regime): s for s in snapshots}
         for fut in as_completed(futures):
             result = fut.result()
-            if result and result.get("action") != "HOLD" and result.get("confidence", 0) >= 0.60:
+            if result and result.get("action") != "HOLD" and result.get("confidence", 0) >= 0.55:
                 signals.append(result)
 
-    return sorted(signals, key=lambda s: s["confidence"], reverse=True)
+    if signals:
+        return sorted(signals, key=lambda s: s["confidence"], reverse=True)
+
+    # Fallback: rank by technicals so there's always something to show
+    watchlist = [_snapshot_to_watchlist(s) for s in snapshots if s]
+    return sorted(watchlist, key=lambda s: s["confidence"], reverse=True)
 
 
 def _scan_broadcast_stocks(spy_change: float, market_regime: str) -> list[dict]:
@@ -83,7 +130,7 @@ def _conf_bar(confidence: float) -> str:
 
 
 def _action_emoji(action: str) -> str:
-    return "🟢" if action == "BUY" else "🔴" if action == "SELL" else "⚪"
+    return "🟢" if action == "BUY" else "🔴" if action == "SELL" else "👁" if action == "WATCH" else "⚪"
 
 
 def _asset_emoji(asset_type: str) -> str:

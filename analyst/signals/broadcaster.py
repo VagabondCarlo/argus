@@ -237,21 +237,22 @@ def format_tier2_broadcast(
     market_regime: str,
     spy_change: float,
     time_slot: str = "morning",
-) -> str:
+) -> list[str]:
     """
-    Full analysis format for the paid private channel.
-    All levels, R/R, and committee reasoning.
+    Full analysis for paid channel — returns a list of messages (one per asset class)
+    so each stays under Telegram's 4096 char limit.
     """
-    today = datetime.now(ET).strftime("%A, %B %d %Y")
+    now = datetime.now(ET)
+    today = now.strftime("%A, %B %d %Y")
+    ts = now.strftime("%-I:%M %p ET")
     regime_tag = market_regime.split(" — ")[0].upper()
     emoji, slot_title, slot_sub = _SLOT_HEADERS.get(time_slot, _SLOT_HEADERS["morning"])
 
-    lines = [
-        f"{emoji} <b>ARGUS PRO — {slot_title}</b>",
-        f"<i>{today}  ·  {slot_sub}</i>",
-        f"Market regime: <b>{regime_tag}</b> | SPY: <b>{spy_change:+.2f}%</b>",
-        "",
-    ]
+    header = (
+        f"{emoji} <b>ARGUS PRO — {slot_title}</b>\n"
+        f"<i>{today}  ·  {slot_sub}</i>\n"
+        f"Regime: <b>{regime_tag}</b> | SPY: <b>{spy_change:+.2f}%</b> | <i>Data: {ts}</i>"
+    )
 
     sections = [
         ("stock", stocks),
@@ -260,54 +261,47 @@ def format_tier2_broadcast(
         ("crypto", crypto),
     ]
 
+    messages = [header]
+
     for asset_type, picks in sections:
         top3 = picks[:3]
-        lines.append(f"━━━ {_section_header(asset_type)} ━━━")
+        lines = [f"━━━ {_section_header(asset_type)} ━━━"]
 
         if not top3:
-            lines.append("  No high-conviction setups today.\n")
-            continue
+            lines.append("  No high-conviction setups today.")
+        else:
+            for s in top3:
+                name = s.get("display_name", s["ticker"])
+                action = s["action"]
+                conf = s["confidence"]
+                target = s.get("price_target", 0)
+                stop = s.get("stop_loss", 0)
+                rr = s.get("risk_reward", 0)
+                horizon = s.get("time_horizon", "—")
+                reasoning = s.get("reasoning", "—")[:200]
+                price = s.get("price", 0)
 
-        for s in top3:
-            name = s.get("display_name", s["ticker"])
-            action = s["action"]
-            conf = s["confidence"]
-            target = s.get("price_target", 0)
-            stop = s.get("stop_loss", 0)
-            rr = s.get("risk_reward", 0)
-            setup = s.get("setup_type", "—")
-            horizon = s.get("time_horizon", "—")
-            reasoning = s.get("reasoning", "—")
-            red_flags = s.get("red_flags", "none")
-            price = s.get("price", 0)
+                is_fx = asset_type == "forex"
+                price_fmt  = f"{price:.4f}"  if is_fx else f"{price:.2f}"
+                target_fmt = f"{target:.4f}" if is_fx else f"{target:.2f}"
+                stop_fmt   = f"{stop:.4f}"   if is_fx else f"{stop:.2f}"
 
-            price_fmt = f"{price:.4f}" if asset_type == "forex" else f"{price:.2f}"
-            target_fmt = f"{target:.4f}" if asset_type == "forex" else f"{target:.2f}"
-            stop_fmt = f"{stop:.4f}" if asset_type == "forex" else f"{stop:.2f}"
+                execution_block = format_execution_tier2(s)
 
-            execution_block = format_execution_tier2(s)
+                lines += [
+                    f"\n{_action_emoji(action)} <b>{name} — {action}</b>",
+                    f"Confidence: <b>{conf:.0%}</b>  {_conf_bar(conf)}",
+                    f"Entry: <b>{price_fmt}</b> | Target: <b>{target_fmt}</b> | Stop: <b>{stop_fmt}</b>",
+                    f"R/R: <b>{rr:.1f}x</b> | Hold: {horizon}",
+                    f"📝 <i>{reasoning}</i>",
+                ]
+                if execution_block:
+                    lines.append(execution_block)
 
-            lines += [
-                f"\n{_action_emoji(action)} <b>{name} — {action}</b>",
-                f"Confidence: <b>{conf:.0%}</b>  {_conf_bar(conf)}",
-                f"Entry: <b>{price_fmt}</b> | Target: <b>{target_fmt}</b> | Stop: <b>{stop_fmt}</b>",
-                f"R/R: <b>{rr:.1f}x</b> | Setup: {setup} | Hold: {horizon}",
-                f"",
-                f"📝 <i>{reasoning}</i>",
-            ]
-            if red_flags and red_flags.lower() != "none":
-                lines.append(f"⚠️ <i>{red_flags}</i>")
-            if execution_block:
-                lines.append(f"\n{execution_block}")
-            lines.append("")
+        lines.append("\n<i>Not financial advice. Trade your own plan.</i>")
+        messages.append("\n".join(lines))
 
-    lines += [
-        "─────────────────────────",
-        "<i>⚠️ Argus Pro — Institutional-quality analysis.</i>",
-        "<i>Not financial advice. Trade your own plan.</i>",
-    ]
-
-    return "\n".join(lines)
+    return messages
 
 
 async def send_channel_message(bot, channel_id: str, text: str):
@@ -364,10 +358,11 @@ async def run_broadcast(bot, tier1_channel: str, tier2_channel: str, time_slot: 
     )
 
     tier1_msg = format_tier1_broadcast(stocks, forex, metals, crypto, market_regime, time_slot)
-    tier2_msg = format_tier2_broadcast(stocks, forex, metals, crypto, market_regime, spy_change, time_slot)
+    tier2_msgs = format_tier2_broadcast(stocks, forex, metals, crypto, market_regime, spy_change, time_slot)
 
     await send_channel_message(bot, tier1_channel, tier1_msg)
-    await send_channel_message(bot, tier2_channel, tier2_msg)
+    for msg in tier2_msgs:
+        await send_channel_message(bot, tier2_channel, msg)
 
     total = sum(len(x[:3]) for x in [stocks, forex, metals, crypto])
     logger.info(f"{time_slot.capitalize()} broadcast complete — {total} signals published")

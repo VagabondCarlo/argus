@@ -146,7 +146,7 @@ def run_scan(full_universe: bool = False) -> list[dict]:
                 ON CONFLICT(trade_date) DO UPDATE SET signals_analyzed = signals_analyzed + 1
             """, (trade_date,))
 
-        if action == "HOLD" or confidence < 0.60 or risk_reward < 1.5:
+        if action == "HOLD" or (action != "WATCH" and confidence < 0.60) or (action not in ("WATCH",) and risk_reward < 1.2):
             logger.info(f"PASS: {ticker} | {action} | conf={confidence:.0%} | R/R={risk_reward:.1f}")
             with get_conn() as conn:
                 conn.execute("""

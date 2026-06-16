@@ -194,12 +194,22 @@ def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, mark
 
         # Enforce risk/reward check — don't trust the model alone
         price = snapshot["price"]
+        action = signal["action"]
+
+        # If LLM omitted levels, calculate from price using standard R/R defaults
         if signal.get("price_target") is None or signal.get("stop_loss") is None:
-            logger.warning(f"LLM returned null levels for {snapshot['ticker']}, skipping")
-            return None
+            if action == "BUY":
+                signal["price_target"] = round(price * 1.04, 4)
+                signal["stop_loss"]    = round(price * 0.98, 4)
+            elif action == "SELL":
+                signal["price_target"] = round(price * 0.96, 4)
+                signal["stop_loss"]    = round(price * 1.02, 4)
+            else:
+                return None  # HOLD with no levels — discard
+            logger.info(f"LLM omitted levels for {snapshot['ticker']} — using technical defaults")
+
         target = float(signal["price_target"])
         stop = float(signal["stop_loss"])
-        action = signal["action"]
 
         if action == "BUY" and target > price and stop < price:
             rr = (target - price) / (price - stop) if (price - stop) > 0 else 0

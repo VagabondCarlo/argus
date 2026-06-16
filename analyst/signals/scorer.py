@@ -1,15 +1,13 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from analyst.data.universe import get_core_universe, get_full_universe
 from analyst.data.screener import run_prescreen, filter_by_market_regime
 from analyst.data.market import get_market_snapshot
-from analyst.data.news import fetch_news, format_news_for_prompt
-from analyst.data.web_scraper import get_full_enrichment
-from analyst.data.browser_scraper import get_browser_enrichment
-from analyst.data.social_aggregator import get_ticker_social_context
-from analyst.sentiment.analyzer import analyze_ticker, get_spy_context
+from analyst.sentiment.analyzer import get_spy_context
+from analyst.signals.technical import score_snapshot
 from shared.database import save_signal, get_todays_signals, get_conn
 from shared.config import config
 from notifications.bot import send_sync_notification
@@ -89,52 +87,37 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         logger.info("No candidates passed pre-screen.")
         return []
 
-    # Step 3: Fetch SPY context once — used for regime filter AND passed into every LLM call
+    # Step 3: SPY regime filter
     spy_change, market_regime = get_spy_context()
     candidates = filter_by_market_regime(candidates, spy_change)
-    logger.info(f"Analyzing {len(candidates)} candidates (SPY: {spy_change:+.1f}%)")
+    logger.info(f"Scoring {len(candidates)} candidates (SPY: {spy_change:+.1f}%, {market_regime})")
 
     new_signals = []
     trade_date = date.today().isoformat()
 
-    # Step 4 + 5: Deep analysis + LLM scoring
-    for candidate in candidates:
-        ticker = candidate["ticker"]
+    # Step 4: Fetch all snapshots in parallel, score with pure technicals (no LLM)
+    tickers_map = {c["ticker"]: c for c in candidates}
+    snapshots: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = {ex.submit(get_market_snapshot, t): t for t in tickers_map}
+        for fut in as_completed(futures):
+            ticker = futures[fut]
+            try:
+                snap = fut.result()
+                if snap:
+                    snap["asset_type"] = "stock"
+                    snap["spy_change"] = spy_change
+                    snapshots[ticker] = snap
+            except Exception as e:
+                logger.warning(f"Snapshot failed for {ticker}: {e}")
 
-        snapshot = get_market_snapshot(ticker)
-        if snapshot is None:
-            continue
+    logger.info(f"Snapshots fetched: {len(snapshots)}/{len(candidates)}")
 
-        news = fetch_news(ticker)
-        news_text = format_news_for_prompt(news)
+    # Step 5: Score each snapshot
+    for ticker, snapshot in snapshots.items():
+        signal = score_snapshot(snapshot)
 
-        enrichment = get_full_enrichment(ticker)
-        browser    = get_browser_enrichment(ticker, asset_type="stock")
-        social     = get_ticker_social_context(ticker)
-        enrichment_text = "\n".join(filter(None, [
-            enrichment.get("llm_context", ""),
-            browser.get("llm_context", ""),
-            social.get("llm_context", ""),
-        ]))
-
-        signal = analyze_ticker(
-            snapshot, news_text,
-            spy_change=spy_change,
-            market_regime=market_regime,
-            enrichment_text=enrichment_text,
-        )
-
-        # Hard cap: earnings within 7 days kills confidence to ≤ 0.65
-        if signal and enrichment.get("earnings_risk"):
-            if signal.get("confidence", 0) > 0.65:
-                signal["confidence"] = 0.65
-                signal["red_flags"] = (signal.get("red_flags") or "") + " | Earnings within 7 days — confidence capped"
-                logger.info(f"Earnings risk cap applied to {ticker}")
-
-        if signal is None:
-            continue
-
-        action = signal.get("action", "HOLD")
+        action = signal.get("action", "WATCH")
         confidence = signal.get("confidence", 0.0)
         risk_reward = signal.get("risk_reward", 0.0)
 

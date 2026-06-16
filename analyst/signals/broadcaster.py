@@ -17,6 +17,7 @@ from analyst.data.universe_extended import FOREX_PAIRS, METALS_PAIRS, CRYPTO_PAI
 from analyst.sentiment.analyzer import get_spy_context
 from analyst.data.market import get_market_snapshot
 from analyst.signals.execution import format_execution_tier1, format_execution_tier2
+from analyst.signals.technical import score_snapshot
 
 logger = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
@@ -26,77 +27,6 @@ BROADCAST_STOCKS = [
     "GOOGL", "AMZN", "AMD", "SPY", "QQQ",
     "JPM", "NFLX", "PLTR", "COIN", "SMCI",
 ]
-
-
-def _score_snapshot(snap: dict) -> dict:
-    """
-    Pure technical scoring — no LLM. Runs in <1ms per asset.
-    Signals are ranked by a weighted combination of RSI, MACD, EMA, volume, and momentum.
-    """
-    rsi   = snap.get("rsi", 50)
-    ema   = snap.get("ema_trend", "neutral")
-    macd  = snap.get("macd_cross", "neutral")
-    bb    = snap.get("bb_pct", 0.5)
-    vol   = snap.get("volume_ratio", 1.0)
-    chg   = snap.get("price_change_pct", 0.0)
-    price = snap.get("price", 0)
-    asset = snap.get("asset_type", "stock")
-
-    # --- BUY pressure signals ---
-    buy_score = 0.0
-    buy_score += 0.14 if rsi < 30 else 0.09 if rsi < 40 else 0.04 if rsi < 50 else 0.0
-    buy_score += 0.12 if macd == "bullish" else 0.0
-    buy_score += 0.08 if ema == "up" else 0.0
-    buy_score += 0.06 if bb < 0.20 else 0.0
-    buy_score += 0.05 if vol > 1.5 else 0.02 if vol > 1.2 else 0.0
-    buy_score += 0.04 if chg > 1.5 else 0.02 if chg > 0.5 else 0.0
-
-    # --- SELL pressure signals ---
-    sell_score = 0.0
-    sell_score += 0.14 if rsi > 70 else 0.09 if rsi > 60 else 0.04 if rsi > 55 else 0.0
-    sell_score += 0.12 if macd == "bearish" else 0.0
-    sell_score += 0.08 if ema == "down" else 0.0
-    sell_score += 0.06 if bb > 0.80 else 0.0
-    sell_score += 0.05 if vol > 1.5 else 0.02 if vol > 1.2 else 0.0
-    sell_score += 0.04 if chg < -1.5 else 0.02 if chg < -0.5 else 0.0
-
-    if buy_score >= sell_score and buy_score >= 0.15:
-        action = "BUY"
-        conf = round(min(0.50 + buy_score, 0.82), 2)
-        mult_long  = 1.04 if asset == "stock" else 1.02
-        mult_stop  = 0.98 if asset == "stock" else 0.99
-    elif sell_score > buy_score and sell_score >= 0.15:
-        action = "SELL"
-        conf = round(min(0.50 + sell_score, 0.82), 2)
-        mult_long  = 0.96 if asset == "stock" else 0.98
-        mult_stop  = 1.02 if asset == "stock" else 1.01
-    else:
-        action = "WATCH"
-        conf = round(min(0.50 + max(buy_score, sell_score), 0.65), 2)
-        mult_long  = 1.02
-        mult_stop  = 0.99
-
-    rsi_label = "oversold" if rsi < 35 else "overbought" if rsi > 65 else f"{rsi:.0f}"
-    reasoning = (
-        f"RSI {rsi:.0f} ({rsi_label}), EMA {ema}, MACD {macd}, "
-        f"BB {bb:.2f}, vol {vol:.1f}x avg, session {chg:+.2f}%."
-    )
-
-    return {
-        "ticker":       snap["ticker"],
-        "display_name": snap.get("display_name", snap["ticker"]),
-        "asset_type":   asset,
-        "action":       action,
-        "confidence":   conf,
-        "price":        price,
-        "price_target": round(price * mult_long, 4),
-        "stop_loss":    round(price * mult_stop, 4),
-        "risk_reward":  round(abs(mult_long - 1) / abs(1 - mult_stop), 1) if mult_stop != 1 else 1.5,
-        "setup_type":   "technical",
-        "time_horizon": "1–3 days",
-        "reasoning":    reasoning,
-        "red_flags":    "none",
-    }
 
 
 def _fetch_stock_snapshot(ticker: str) -> dict | None:
@@ -116,7 +46,7 @@ def _scan_class(fetch_fn, tickers) -> list[dict]:
             try:
                 snap = fut.result()
                 if snap:
-                    snapshots.append(_score_snapshot(snap))
+                    snapshots.append(score_snapshot(snap))
             except Exception as e:
                 logger.warning(f"Asset fetch failed, skipping: {e}")
 

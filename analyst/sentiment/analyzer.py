@@ -47,7 +47,8 @@ If ALL THREE align in a strong bullish regime, you may push confidence toward 0.
 This is how Autopilot works — attach to what is already working and let it run.
 
 You respond ONLY with valid JSON. No prose outside the JSON block.
-Below 0.60 is always HOLD — never force a trade.
+Use WATCH (not HOLD) when there is directional bias but not enough conviction to trade.
+WATCH signals must still include price_target and stop_loss — they are tracked for the record.
 """
 
 SIGNAL_PROMPT = """Run this ticker through the three-committee framework and give your verdict.
@@ -88,11 +89,11 @@ Hard stops — these auto-veto a BUY signal:
 
 Return ONLY this JSON, nothing else:
 {{
-  "action": "BUY" or "SELL" or "HOLD",
+  "action": "BUY" or "SELL" or "WATCH",
   "confidence": 0.0 to 1.0,
   "setup_type": "breakout" or "reversal" or "momentum" or "gap_fill" or "value_entry" or "none",
-  "price_target": float,
-  "stop_loss": float,
+  "price_target": float (required — use best estimate even for WATCH),
+  "stop_loss": float (required — use best estimate even for WATCH),
   "risk_reward": float,
   "time_horizon": "intraday" or "1-2 days" or "2-3 days",
   "reasoning": "3 sentences: one per committee member — what Buffett, Dalio, and Reed each say about this setup.",

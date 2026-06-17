@@ -79,7 +79,10 @@ def check_rate_limit(user_id: int) -> tuple[bool, str]:
 async def _get_analyst_status() -> dict:
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(f"http://{config.ANALYST_HOST}:{config.ANALYST_PORT}/status")
+            r = await client.get(
+                f"http://{config.ANALYST_HOST}:{config.ANALYST_PORT}/status",
+                headers={"Authorization": f"Bearer {config.MASTER_KEY}"},
+            )
             r.raise_for_status()
             return r.json()
     except Exception as e:

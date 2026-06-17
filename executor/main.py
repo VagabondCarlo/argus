@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from shared.config import config
 from shared.database import init_db, get_todays_signals, get_todays_trades, get_trade_history, get_conn
 from executor.gateway.alpaca import (
-    get_account, get_latest_price, place_order,
+    get_account, get_latest_price, place_order, close_position,
     close_all_positions, trades_this_week, get_open_positions
 )
 from executor.risk.manager import (
@@ -17,7 +17,7 @@ from executor.audit.auditor import run_audit
 from notifications.bot import send_sync_notification
 from analyst.data.market import get_market_snapshot
 from analyst.sentiment.analyzer import get_spy_context
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import time as time_module
 import secrets
@@ -139,14 +139,42 @@ def execute_signal(signal: dict, account: dict):
     ticker = signal["ticker"]
     side = signal["action"]
 
-    # Never double-enter a position we already hold
     open_positions = get_open_positions()
-    if any(p["ticker"] == ticker for p in open_positions):
-        logger.info(f"Already holding {ticker} — marking signal executed, skipping order")
+    existing = next((p for p in open_positions if p["ticker"] == ticker), None)
+
+    if side == "BUY" and existing:
+        logger.info(f"Already holding {ticker} — skipping duplicate BUY")
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
         return
 
+    if side == "SELL" and not existing:
+        logger.info(f"No position in {ticker} — skipping SELL (no short selling)")
+        with get_conn() as conn:
+            conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
+        return
+
+    if side == "SELL" and existing:
+        logger.info(f"Closing position: {ticker} at ~${existing['current_price']:.2f}")
+        result = close_position(ticker)
+        if "error" in result:
+            logger.error(f"Close failed {ticker}: {result['error']}")
+            send_sync_notification(f"❌ *Close failed*: {ticker}\n_{result['error']}_")
+            return
+        with get_conn() as conn:
+            conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
+            conn.execute("""
+                INSERT INTO trades (signal_id, order_id, fill_price, quantity, executed_at, status)
+                VALUES (?, ?, ?, ?, ?, 'closed')
+            """, (signal["id"], "close", existing["current_price"], existing["qty"],
+                  datetime.now(timezone.utc).isoformat()))
+        send_sync_notification(
+            f"✅ *Position closed*: {ticker}\n"
+            f"Exit: ~${existing['current_price']:.2f} | P&L: ${existing['unrealized_pnl']:.2f}"
+        )
+        return
+
+    # BUY on unowned stock — enter position
     price = get_latest_price(ticker)
     if not price:
         logger.error(f"Cannot get price for {ticker}")
@@ -175,10 +203,10 @@ def execute_signal(signal: dict, account: dict):
         conn.execute("""
             INSERT INTO trades (signal_id, order_id, fill_price, quantity, executed_at, status)
             VALUES (?, ?, ?, ?, ?, 'open')
-        """, (signal["id"], result["order_id"], price, qty, datetime.utcnow().isoformat()))
+        """, (signal["id"], result["order_id"], price, qty, datetime.now(timezone.utc).isoformat()))
 
         # Update daily stats
-        trade_date = datetime.utcnow().date().isoformat()
+        trade_date = datetime.now(timezone.utc).date().isoformat()
         conn.execute("""
             INSERT INTO daily_stats (trade_date, signals_executed)
             VALUES (?, 1)

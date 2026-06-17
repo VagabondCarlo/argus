@@ -81,8 +81,8 @@ def process_pending_signals():
         logger.debug("Market closed — skipping signal processing")
         return
 
-    # Pull signals in the 70-100% range — both audit candidates and direct executes
-    signals = get_todays_signals(min_confidence=0.70)
+    # Only execute stock signals — crypto/forex/metals use different brokers
+    signals = get_todays_signals(min_confidence=0.70, asset_type="stock")
     actionable = [s for s in signals if not s["executed"]]
 
     if not actionable:
@@ -138,6 +138,14 @@ def process_pending_signals():
 def execute_signal(signal: dict, account: dict):
     ticker = signal["ticker"]
     side = signal["action"]
+
+    # Never double-enter a position we already hold
+    open_positions = get_open_positions()
+    if any(p["ticker"] == ticker for p in open_positions):
+        logger.info(f"Already holding {ticker} — marking signal executed, skipping order")
+        with get_conn() as conn:
+            conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
+        return
 
     price = get_latest_price(ticker)
     if not price:

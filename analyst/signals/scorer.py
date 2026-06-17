@@ -1,7 +1,9 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+
+_ET = ZoneInfo("America/New_York")
 
 from analyst.data.universe import get_core_universe, get_full_universe
 from analyst.data.universe_extended import FOREX_PAIRS, METALS_PAIRS, CRYPTO_PAIRS
@@ -15,11 +17,10 @@ from shared.config import config
 from notifications.bot import send_sync_notification
 
 logger = logging.getLogger(__name__)
-ET = ZoneInfo("America/New_York")
 
 
 def is_market_hours() -> bool:
-    now = datetime.now(ET)
+    now = datetime.now(_ET)
     if now.weekday() >= 5:
         return False
     open_time = now.replace(hour=9, minute=30, second=0, microsecond=0)
@@ -28,7 +29,7 @@ def is_market_hours() -> bool:
 
 
 def is_premarket() -> bool:
-    now = datetime.now(ET)
+    now = datetime.now(_ET)
     if now.weekday() >= 5:
         return False
     return now.replace(hour=7, minute=0) <= now < now.replace(hour=9, minute=30)
@@ -36,7 +37,7 @@ def is_premarket() -> bool:
 
 def recently_analyzed(ticker: str, hours: int = 4) -> bool:
     """Return True if this ticker was already scored within the last N hours."""
-    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     with get_conn() as conn:
         row = conn.execute(
             "SELECT id FROM signals WHERE ticker=? AND generated_at>=?",
@@ -46,9 +47,8 @@ def recently_analyzed(ticker: str, hours: int = 4) -> bool:
 
 
 def get_weekly_signal_count() -> int:
-    """How many signals have we already committed to this week."""
-    from datetime import timedelta
-    today = date.today()
+    """How many signals have we already committed to this week (ET week boundary)."""
+    today = datetime.now(_ET).date()
     monday = today - timedelta(days=today.weekday())
     with get_conn() as conn:
         row = conn.execute(
@@ -96,7 +96,7 @@ def run_scan(full_universe: bool = False) -> list[dict]:
     logger.info(f"Scoring {len(candidates)} candidates (SPY: {spy_change:+.1f}%, {market_regime})")
 
     new_signals = []
-    trade_date = date.today().isoformat()
+    trade_date = datetime.now(timezone.utc).date().isoformat()
 
     # Step 4: Fetch all snapshots in parallel, score with pure technicals (no LLM)
     tickers_map = {c["ticker"]: c for c in candidates}
@@ -132,7 +132,8 @@ def run_scan(full_universe: bool = False) -> list[dict]:
                 ON CONFLICT(trade_date) DO UPDATE SET signals_analyzed = signals_analyzed + 1
             """, (trade_date,))
 
-        if action == "HOLD" or (action != "WATCH" and confidence < 0.60) or (action not in ("WATCH",) and risk_reward < 1.2):
+        # Minimum floors: BUY/SELL need conf ≥ 0.60 and R/R ≥ 1.2; WATCH needs conf ≥ 0.62
+        if action == "HOLD" or confidence < 0.60 or (action != "WATCH" and risk_reward < 1.2):
             logger.info(f"PASS: {ticker} | {action} | conf={confidence:.0%} | R/R={risk_reward:.1f}")
             with get_conn() as conn:
                 conn.execute("""
@@ -149,6 +150,7 @@ def run_scan(full_universe: bool = False) -> list[dict]:
             price_target=signal.get("price_target", snapshot["price"]),
             stop_loss=signal.get("stop_loss", snapshot["price"] * 0.98),
             reasoning=signal.get("reasoning", ""),
+            asset_type="stock",
         )
         new_signals.append(signal)
 
@@ -219,7 +221,7 @@ def run_extended_scan() -> list[dict]:
     Re-scans each asset every 2 hours so overnight moves are caught.
     """
     spy_change, _ = get_spy_context()
-    trade_date = date.today().isoformat()
+    trade_date = datetime.now(timezone.utc).date().isoformat()
 
     all_assets: dict[str, tuple[str, str]] = {}
     for ticker, name in CRYPTO_PAIRS.items():
@@ -269,7 +271,8 @@ def run_extended_scan() -> list[dict]:
                         ON CONFLICT(trade_date) DO UPDATE SET signals_analyzed = signals_analyzed + 1
                     """, (trade_date,))
 
-                if action == "WATCH" or confidence >= 0.60:
+                # Minimum floor: 0.62 for all signal types — cuts pure noise
+                if confidence >= 0.62:
                     save_signal(
                         ticker=ticker,
                         action=action,
@@ -277,6 +280,7 @@ def run_extended_scan() -> list[dict]:
                         price_target=signal["price_target"],
                         stop_loss=signal["stop_loss"],
                         reasoning=signal["reasoning"],
+                        asset_type=signal["asset_type"],
                     )
                     new_signals.append(signal)
                     logger.info(f"SIGNAL [{signal['asset_type'].upper()}]: {ticker} {action} | conf={confidence:.0%}")

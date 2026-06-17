@@ -1,14 +1,24 @@
 import sqlite3
 import os
-from datetime import datetime, date
+from datetime import datetime, timezone
 from contextlib import contextmanager
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "argus.db")
 
 
+def _utc_today() -> str:
+    """Current date in UTC — always consistent with generated_at timestamps."""
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_conn() as conn:
+        _migrate(conn)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS signals (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +29,8 @@ def init_db():
                 stop_loss   REAL,
                 reasoning   TEXT,
                 generated_at TEXT NOT NULL,
-                executed    INTEGER DEFAULT 0
+                executed    INTEGER DEFAULT 0,
+                asset_type  TEXT DEFAULT 'stock'
             );
 
             CREATE TABLE IF NOT EXISTS trades (
@@ -61,6 +72,14 @@ def init_db():
         """)
 
 
+def _migrate(conn):
+    """Apply schema changes to existing databases without dropping data."""
+    try:
+        conn.execute("ALTER TABLE signals ADD COLUMN asset_type TEXT DEFAULT 'stock'")
+    except Exception:
+        pass  # Column already exists
+
+
 @contextmanager
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -72,29 +91,34 @@ def get_conn():
         conn.close()
 
 
-def save_signal(ticker, action, confidence, price_target, stop_loss, reasoning):
+def save_signal(ticker, action, confidence, price_target, stop_loss, reasoning, asset_type="stock"):
     with get_conn() as conn:
         conn.execute("""
-            INSERT INTO signals (ticker, action, confidence, price_target, stop_loss, reasoning, generated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO signals (ticker, action, confidence, price_target, stop_loss, reasoning, generated_at, asset_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (ticker, action, confidence, price_target, stop_loss, reasoning,
-              datetime.utcnow().isoformat()))
+              _utcnow(), asset_type))
 
 
-def get_todays_signals(min_confidence=0.0):
-    today = date.today().isoformat()
+def get_todays_signals(min_confidence=0.0, asset_type: str | None = None):
+    today = _utc_today()
+    query = """
+        SELECT * FROM signals
+        WHERE date(generated_at) = ?
+        AND confidence >= ?
+    """
+    params: list = [today, min_confidence]
+    if asset_type:
+        query += " AND asset_type = ?"
+        params.append(asset_type)
+    query += " ORDER BY confidence DESC"
     with get_conn() as conn:
-        rows = conn.execute("""
-            SELECT * FROM signals
-            WHERE date(generated_at) = ?
-            AND confidence >= ?
-            ORDER BY confidence DESC
-        """, (today, min_confidence)).fetchall()
+        rows = conn.execute(query, params).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_todays_trades():
-    today = date.today().isoformat()
+    today = _utc_today()
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT t.*, s.ticker, s.action, s.reasoning
@@ -120,7 +144,7 @@ def get_trade_history(limit=10):
 
 
 def get_todays_stats():
-    today = date.today().isoformat()
+    today = _utc_today()
     with get_conn() as conn:
         row = conn.execute(
             "SELECT * FROM daily_stats WHERE trade_date = ?", (today,)

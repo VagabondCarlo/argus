@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -17,7 +17,7 @@ class TradeSignal:
     price_target: float
     stop_loss: float
     reasoning: str
-    generated_at: datetime = field(default_factory=datetime.utcnow)
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def is_actionable(self, threshold: float = 0.75) -> bool:
         return self.confidence >= threshold and self.action != SignalAction.HOLD

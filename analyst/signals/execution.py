@@ -54,8 +54,8 @@ def _stock_suggestions(action: str, horizon: str, ticker: str) -> list[Execution
             instrument="Shares",
             how=(
                 f"Some traders in this setup consider taking a position in {ticker} shares "
-                "at or near the open, with a stop order placed at the stop price above "
-                "to limit downside automatically."
+                "at or near the open, with a stop-loss order placed at the suggested stop price "
+                "shown in the analysis to limit downside automatically."
             ),
             note=f"Lowest risk approach — no expiration, no leverage. Requires enough capital for at least 1 share. {_DYOR}",
         ))

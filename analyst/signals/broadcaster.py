@@ -221,9 +221,10 @@ def format_tier2_broadcast(
                 lines += [
                     f"\n{_action_emoji(action)} <b>{name} — {action}</b>",
                     f"Confidence: <b>{conf:.0%}</b>  {_conf_bar(conf)}",
-                    f"Entry: <b>{price_fmt}</b> | Target: <b>{target_fmt}</b> | Stop: <b>{stop_fmt}</b>",
+                    f"Entry: <b>{price_fmt}</b> | Target: <b>{target_fmt}</b> | Suggested stop: <b>{stop_fmt}</b>",
                     f"R/R: <b>{rr:.1f}x</b> | Hold: {horizon}",
                     f"📝 <i>{reasoning}</i>",
+                    f"<i>⚠️ Entry, target, and stop are suggested levels — place your own orders in your brokerage at these prices.</i>",
                 ]
                 if execution_block:
                     lines.append(execution_block)

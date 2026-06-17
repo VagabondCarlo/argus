@@ -38,7 +38,8 @@ def midday_report() -> str:
     today = date.today().strftime("%A, %B %d")
     lines = [f"☀️ *Mid-Day Report — {today}*\n", "📊 Paper Trading Mode\n"]
 
-    lines.append(f"*Trades executed today:* {stats['signals_executed']}/{3}")
+    from shared.config import config
+    lines.append(f"*Trades this week:* {stats['signals_executed']}/{config.MAX_TRADES_PER_WEEK}")
 
     if trades:
         for t in trades:
@@ -132,12 +133,12 @@ def guest_suggestions(signals) -> str:
     lines.append("Setups Argus identified today with entry, stop, and target:\n")
     for s in signals[:5]:
         icon = "🟢" if s["action"] == "BUY" else "🔴"
-        risk = round(abs(s.get("price_target", 0) - s.get("stop_loss", 0)), 2)
+        entry = s.get("price_target", 0)
+        stop = s.get("stop_loss", 0)
+        risk = round(abs(entry - stop), 2)
         lines.append(
             f"{icon} *{s['ticker']}* {s['action']}\n"
-            f"Entry: ~${s.get('price_target', 0):.2f} | "
-            f"Stop: ${s.get('stop_loss', 0):.2f} | "
-            f"Risk: ${risk:.2f}/share\n"
+            f"Target: ${entry:.2f} | Suggested stop: ${stop:.2f} | Risk: ${risk:.2f}/share\n"
             f"Confidence: {s['confidence']:.0%}\n"
         )
     lines.append("⚠️ _Not financial advice. These are paper trading signals._")

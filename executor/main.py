@@ -18,8 +18,19 @@ from notifications.bot import send_sync_notification
 from analyst.data.market import get_market_snapshot
 from analyst.sentiment.analyzer import get_spy_context
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import time as time_module
 import secrets
+
+_ET = ZoneInfo("America/New_York")
+
+def _is_market_hours() -> bool:
+    now = datetime.now(_ET)
+    if now.weekday() >= 5:
+        return False
+    open_t  = now.replace(hour=9,  minute=30, second=0, microsecond=0)
+    close_t = now.replace(hour=16, minute=0,  second=0, microsecond=0)
+    return open_t <= now <= close_t
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -66,6 +77,10 @@ def signal_watcher_loop():
 
 
 def process_pending_signals():
+    if not _is_market_hours():
+        logger.debug("Market closed — skipping signal processing")
+        return
+
     # Pull signals in the 70-100% range — both audit candidates and direct executes
     signals = get_todays_signals(min_confidence=0.70)
     actionable = [s for s in signals if not s["executed"]]

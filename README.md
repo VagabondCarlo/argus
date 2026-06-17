@@ -40,7 +40,7 @@ Built as a functional portfolio piece demonstrating applied AI, distributed syst
 │  Risk controls:                                                 │
 │    • 2% stop-loss per trade                                    │
 │    • Max 40% position size                                     │
-│    • Max 3 trades/week (PDT compliance)                        │
+│    • Max 25 trades/week                                        │
 │    • 6% weekly loss kill switch                                │
 │                          ↓                                      │
 │  Alpaca Paper Trading API → fractional market order + GTC stop │
@@ -170,7 +170,7 @@ Conviction scores are used as confidence modifiers on top of technical scoring. 
 | Minimum confidence to execute | 66% | Executor |
 | Asset type restriction | Stocks only via Alpaca | Executor filter |
 | No double-entry | One position per ticker | Open position check |
-| Max trades per week | 3 (PDT compliance) | Executor hard block |
+| Max trades per week | 25 (configurable via `.env`) | Executor hard block |
 | Max position size | 40% of account | Risk manager |
 | Stop-loss per trade | 2% | GTC stop order |
 | Weekly loss kill switch | −6% of account | Auto-halt |
@@ -263,7 +263,7 @@ Guests can talk to Argus in plain text — ask about a ticker, a forex pair, or 
 
 | Week | Trades | Win Rate | P&L |
 |---|---|---|---|
-| Week 1 (Jun 16) | In progress | — | — |
+| Week 1 (Jun 16–20) | In progress | — | Positions open: ADBE, BABA, MS, XPEV |
 
 ---
 

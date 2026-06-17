@@ -236,7 +236,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Analyst: {analyst_state}\n"
         f"Executor: {executor_state}\n"
         f"Trading: {trading_state}\n"
-        f"Trades today: {stats['signals_executed']}/3\n"
+        f"Trades this week: {executor.get('trades_this_week', stats['signals_executed'])}/{config.MAX_TRADES_PER_WEEK}\n"
         f"Confidence threshold: {config.CONFIDENCE_THRESHOLD:.0%}\n"
         f"Mode: 📊 Paper Trading",
         parse_mode="Markdown"

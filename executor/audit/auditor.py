@@ -75,7 +75,7 @@ Run your four-question stress test. Return ONLY this JSON:
 Rules:
 - audit_confidence >= 0.75 means the trade executes
 - If analyst red_flags are serious, veto unless the setup is exceptional
-- Weekly trades at 3/3 = auto veto (approved: false)
+- If weekly_trades >= max_trades, the hard rule block will override and set approved: false regardless of your verdict
 - If timing_verdict is "poor", cap audit_confidence at 0.65
 - Be the skeptic. One clear veto reason is enough to block.
 """

@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from shared.config import config
 from shared.database import get_conn
 
@@ -30,10 +30,16 @@ def get_weekly_pnl() -> float:
     return float(row["total"]) if row else 0.0
 
 
-def calculate_position_size(account_cash: float, price: float) -> float:
-    """How many shares to buy, respecting max position size rule."""
-    max_dollars = account_cash * config.MAX_POSITION_SIZE
-    qty = max_dollars / price
+def calculate_position_size(price: float) -> float:
+    """
+    How many shares to buy.
+
+    Always sized against ACCOUNT_CAPITAL, not the broker cash balance.
+    Paper accounts start with $100K but we only risk ACCOUNT_CAPITAL ($500).
+    Using account_cash would create positions 200x too large on paper accounts.
+    """
+    risk_dollars = config.ACCOUNT_CAPITAL * config.MAX_POSITION_SIZE
+    qty = risk_dollars / price
     return round(qty, 6)
 
 
@@ -44,18 +50,38 @@ def calculate_stop_loss(entry_price: float, side: str) -> float:
     return round(entry_price * (1 + config.STOP_LOSS_PCT), 2)
 
 
-def check_trade_allowed(account_cash: float) -> tuple[bool, str]:
+def check_trade_allowed(
+    account_cash: float,
+    unrealized_pnl: float = 0.0,
+    daily_pnl: float = 0.0,
+) -> tuple[bool, str]:
     """
     Returns (allowed, reason). Enforces all hard limits before a trade executes.
+
+    unrealized_pnl: sum of open position unrealized P&L from Alpaca (negative = losing)
+    daily_pnl:      today's equity change from Alpaca account (negative = losing today)
     """
+    # Weekly trade count
     weekly_count = get_weekly_trade_count()
     if weekly_count >= config.MAX_TRADES_PER_WEEK:
         return False, f"Weekly trade limit reached ({weekly_count}/{config.MAX_TRADES_PER_WEEK})"
 
-    weekly_pnl = get_weekly_pnl()
-    loss_limit = config.ACCOUNT_CAPITAL * config.WEEKLY_LOSS_LIMIT
-    if weekly_pnl <= -loss_limit:
-        return False, f"Weekly loss kill switch triggered (${weekly_pnl:.2f} loss)"
+    # Daily loss limit — uses live Alpaca equity change, catches intraday swings
+    daily_limit = config.ACCOUNT_CAPITAL * config.DAILY_LOSS_LIMIT
+    if daily_pnl <= -daily_limit:
+        return False, f"Daily loss limit hit (${daily_pnl:.2f} today / limit -${daily_limit:.2f})"
+
+    # Weekly loss limit — realized closed trade P&L + current open position losses
+    # Previously only checked closed trades, so open positions were invisible to the kill switch
+    realized = get_weekly_pnl()
+    total_pnl = realized + unrealized_pnl
+    weekly_limit = config.ACCOUNT_CAPITAL * config.WEEKLY_LOSS_LIMIT
+    if total_pnl <= -weekly_limit:
+        return False, (
+            f"Weekly loss limit hit — "
+            f"realized ${realized:.2f} + unrealized ${unrealized_pnl:.2f} = ${total_pnl:.2f} "
+            f"(limit -${weekly_limit:.2f})"
+        )
 
     if account_cash < 10:
         return False, f"Insufficient cash (${account_cash:.2f})"

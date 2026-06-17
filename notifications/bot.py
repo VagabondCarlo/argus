@@ -387,10 +387,12 @@ async def cmd_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"*Current Configuration*\n\n"
         f"Confidence threshold: {config.CONFIDENCE_THRESHOLD:.0%}\n"
         f"Max trades/week: {config.MAX_TRADES_PER_WEEK}\n"
-        f"Max position size: {config.MAX_POSITION_SIZE:.0%}\n"
+        f"Max open positions: {config.MAX_OPEN_POSITIONS}\n"
+        f"Position size: {config.MAX_POSITION_SIZE:.0%} of ${config.ACCOUNT_CAPITAL:.0f} capital = ${config.ACCOUNT_CAPITAL * config.MAX_POSITION_SIZE:.0f}/trade\n"
         f"Stop-loss: {config.STOP_LOSS_PCT:.0%} per trade\n"
-        f"Weekly kill switch: {config.WEEKLY_LOSS_LIMIT:.0%}\n"
-        f"Capital: ${config.ACCOUNT_CAPITAL:.2f}\n"
+        f"Daily loss limit: {config.DAILY_LOSS_LIMIT:.0%} = ${config.ACCOUNT_CAPITAL * config.DAILY_LOSS_LIMIT:.0f}\n"
+        f"Weekly loss limit: {config.WEEKLY_LOSS_LIMIT:.0%} = ${config.ACCOUNT_CAPITAL * config.WEEKLY_LOSS_LIMIT:.0f}\n"
+        f"Capital at risk: ${config.ACCOUNT_CAPITAL:.2f}\n"
         f"Mode: 📊 Paper Trading",
         parse_mode="Markdown"
     )

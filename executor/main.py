@@ -94,9 +94,20 @@ def process_pending_signals():
         logger.warning("Cannot process signals — account unreachable")
         return
 
-    allowed, reason = check_trade_allowed(account["cash"])
+    # Pull live position state once — used for risk checks and position limit
+    open_positions = get_open_positions()
+    unrealized_pnl = sum(p["unrealized_pnl"] for p in open_positions)
+    open_count = len(open_positions)
+    daily_pnl = account.get("pnl_today", 0.0)
+
+    allowed, reason = check_trade_allowed(
+        account["cash"],
+        unrealized_pnl=unrealized_pnl,
+        daily_pnl=daily_pnl,
+    )
     if not allowed:
         logger.info(f"Trade blocked: {reason}")
+        send_sync_notification(f"🛡 *Risk limit active — no new trades*\n_{reason}_")
         return
 
     spy_change, market_regime = get_spy_context()
@@ -104,6 +115,14 @@ def process_pending_signals():
 
     for signal in actionable:
         conf = signal["confidence"]
+
+        # Position limit: only BUY signals are blocked — SELL signals always allowed (they close positions)
+        if signal["action"] == "BUY" and open_count >= config.MAX_OPEN_POSITIONS:
+            logger.info(
+                f"Position limit: {open_count}/{config.MAX_OPEN_POSITIONS} open — "
+                f"skipping BUY {signal['ticker']}"
+            )
+            continue
 
         # Signals already above threshold skip the audit and execute directly
         if conf >= config.CONFIDENCE_THRESHOLD:
@@ -184,7 +203,7 @@ def execute_signal(signal: dict, account: dict) -> bool:
         logger.error(f"Cannot get price for {ticker}")
         return False
 
-    qty = calculate_position_size(account["cash"], price)
+    qty = calculate_position_size(price)
     stop_price = calculate_stop_loss(price, side)
 
     if qty < 0.001:
@@ -259,7 +278,10 @@ def audit_signal(body: AuditRequest):
     result = run_audit(signal, snapshot, account, weekly_trades, spy_change, market_regime)
 
     if result["approved"] and result["audit_confidence"] >= config.CONFIDENCE_THRESHOLD:
-        allowed, reason = check_trade_allowed(account.get("cash", 0))
+        open_positions = get_open_positions()
+        unrealized_pnl = sum(p["unrealized_pnl"] for p in open_positions)
+        daily_pnl = account.get("pnl_today", 0.0)
+        allowed, reason = check_trade_allowed(account.get("cash", 0), unrealized_pnl=unrealized_pnl, daily_pnl=daily_pnl)
         if allowed:
             signal["confidence"] = result["audit_confidence"]
             execute_signal(signal, account)

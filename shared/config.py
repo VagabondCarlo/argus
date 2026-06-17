@@ -31,10 +31,17 @@ class Config:
     # Trading rules — hard limits, not suggestions
     CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
     MAX_TRADES_PER_WEEK = int(os.getenv("MAX_TRADES_PER_WEEK", "25"))
-    MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "0.40"))
-    STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.02"))
-    WEEKLY_LOSS_LIMIT = float(os.getenv("WEEKLY_LOSS_LIMIT", "0.06"))
-    ACCOUNT_CAPITAL = float(os.getenv("ACCOUNT_CAPITAL", "500.00"))
+    MAX_OPEN_POSITIONS  = int(os.getenv("MAX_OPEN_POSITIONS", "3"))
+
+    # Position sizing — always based on ACCOUNT_CAPITAL, never on broker cash balance
+    # This prevents oversized positions on paper accounts that have large starting balances
+    MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "0.20"))   # 20% of ACCOUNT_CAPITAL per trade
+    ACCOUNT_CAPITAL   = float(os.getenv("ACCOUNT_CAPITAL", "500.00"))   # real capital at risk
+
+    # Loss limits (expressed as fraction of ACCOUNT_CAPITAL)
+    STOP_LOSS_PCT      = float(os.getenv("STOP_LOSS_PCT",      "0.02"))  # 2% per trade
+    DAILY_LOSS_LIMIT   = float(os.getenv("DAILY_LOSS_LIMIT",   "0.03"))  # 3% per day  = $15
+    WEEKLY_LOSS_LIMIT  = float(os.getenv("WEEKLY_LOSS_LIMIT",  "0.06"))  # 6% per week = $30
 
     # Inter-agent communication
     ANALYST_HOST = os.getenv("ANALYST_HOST", "localhost")

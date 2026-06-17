@@ -240,10 +240,8 @@ def run_extended_scan() -> list[dict]:
     def _fetch(ticker_name_type):
         ticker, (name, asset_type) = ticker_name_type
         try:
-            snap = get_extended_snapshot(ticker)
+            snap = get_extended_snapshot(ticker, name, asset_type)
             if snap:
-                snap["asset_type"] = asset_type
-                snap["display_name"] = name
                 snap["spy_change"] = spy_change
             return snap
         except Exception as e:

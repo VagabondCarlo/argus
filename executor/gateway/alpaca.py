@@ -6,6 +6,7 @@ from alpaca.data.requests import StockLatestQuoteRequest
 from shared.config import config
 from shared.database import get_conn
 import logging
+import time
 from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,9 @@ def place_order(ticker: str, side: str, qty: float, stop_loss_price: float) -> d
             time_in_force=TimeInForce.DAY
         ))
         logger.info(f"Order placed: {side} {qty} {ticker} | ID: {order.id}")
+
+        # Brief pause — Alpaca paper trading flags immediate stop-loss as wash trade
+        time.sleep(2)
 
         # Protective stop-loss — GTC requires whole shares; floor to int
         stop_qty = int(math.floor(qty))

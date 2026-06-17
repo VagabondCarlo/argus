@@ -8,7 +8,7 @@ from shared.config import config
 from shared.database import init_db, get_todays_signals, get_todays_trades, get_trade_history, get_conn
 from executor.gateway.alpaca import (
     get_account, get_latest_price, place_order,
-    close_all_positions, trades_this_week
+    close_all_positions, trades_this_week, get_open_positions
 )
 from executor.risk.manager import (
     check_trade_allowed, calculate_position_size, calculate_stop_loss, get_weekly_trade_count

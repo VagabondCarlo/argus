@@ -360,6 +360,7 @@ The free channel levels the playing field. The paid channel funds the infrastruc
 
 ---
 
-*Built by VagabondCarlo — CySA+ candidate, AI systems builder*  
+*Built by Michael Carlo — CySA+ candidate, AI systems builder*  
+*Vibe coded with Claude*  
 *Paper trading minimum 30 days before live capital deployment*  
 *Version history: [docs/changelog/](docs/changelog/)*

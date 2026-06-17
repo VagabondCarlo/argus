@@ -7,6 +7,7 @@ import ollama
 import json
 import logging
 import re
+from shared.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ CURRENT MARKET DATA:
   Market Regime:      {market_regime}
 
 ACCOUNT HEALTH:
-  Weekly trades used: {weekly_trades}/3
+  Weekly trades used: {weekly_trades}/{max_trades}
   Available capital:  ${available_capital:.2f}
 
 Run your four-question stress test. Return ONLY this JSON:
@@ -105,6 +106,7 @@ def run_audit(signal: dict, snapshot: dict, account_info: dict, weekly_trades: i
         spy_change=spy_change,
         market_regime=market_regime,
         weekly_trades=weekly_trades,
+        max_trades=config.MAX_TRADES_PER_WEEK,
         available_capital=available_capital,
     )
 
@@ -126,9 +128,9 @@ def run_audit(signal: dict, snapshot: dict, account_info: dict, weekly_trades: i
         result = json.loads(json_match.group())
 
         # Hard rule: weekly limit is absolute
-        if weekly_trades >= 3:
+        if weekly_trades >= config.MAX_TRADES_PER_WEEK:
             result["approved"] = False
-            result["veto_reason"] = "Weekly trade limit reached (3/3)"
+            result["veto_reason"] = f"Weekly trade limit reached ({weekly_trades}/{config.MAX_TRADES_PER_WEEK})"
             result["audit_confidence"] = 0.0
 
         logger.info(

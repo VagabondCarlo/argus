@@ -1,7 +1,11 @@
 import os
+import sys
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class Config:
@@ -25,6 +29,12 @@ class Config:
 
     # Master key — required for destructive commands
     MASTER_KEY = os.getenv("MASTER_KEY", "")
+
+
+config = Config()
+
+if not config.MASTER_KEY:
+    logger.critical("MASTER_KEY is not set — all owner commands are unprotected. Set it in .env and restart.")
 
     # Trading rules — these are hard limits, not suggestions
     CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))

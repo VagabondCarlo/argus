@@ -1,6 +1,6 @@
 import requests
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from shared.config import config
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,7 @@ def fetch_news(ticker: str, max_articles: int = 5) -> list[dict]:
         return _fallback_news(ticker)
 
     try:
-        from_date = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+        from_date = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
         resp = requests.get(
             "https://newsapi.org/v2/everything",
             params={

@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "argus.db")
@@ -202,7 +202,7 @@ RATE_LIMIT_HOURS = 4
 
 def count_recent_questions(user_id: int) -> tuple[int, str | None]:
     """Returns (count_in_window, oldest_asked_at ISO string or None)."""
-    cutoff = datetime.utcnow().replace(microsecond=0) - __import__('datetime').timedelta(hours=RATE_LIMIT_HOURS)
+    cutoff = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=RATE_LIMIT_HOURS)
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT asked_at FROM guest_questions WHERE user_id = ? AND asked_at > ? ORDER BY asked_at ASC",

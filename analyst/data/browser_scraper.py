@@ -262,18 +262,32 @@ def get_crypto_sentiment(ticker: str) -> dict:
 # ── On-demand browser fetch (for OpenClaw integration) ───────────────────────
 
 _ALLOWED_SCHEMES = {"https", "http"}
-_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}
+_BLOCKED_HOSTS = {
+    "localhost", "127.0.0.1", "0.0.0.0", "::1",
+    "169.254.169.254",          # AWS/GCP metadata service
+    "metadata.google.internal", # GCP metadata
+    "169.254.170.2",            # ECS task metadata
+}
+# Regex catches hex/octal IP notation and IPv6-mapped IPv4 used to bypass string blocklist
+import re as _re
+_BLOCKED_IP_RE = _re.compile(
+    r'^(0x[0-9a-f]+(\.[0-9a-f]+){0,3}|0\d+(\.\d+){0,3}|'  # hex/octal
+    r'::ffff:127\.|::ffff:0:127\.|'                           # IPv6-mapped loopback
+    r'::1|::ffff:169\.254\.)',                                # IPv6 loopback / link-local
+    _re.IGNORECASE,
+)
 
 def browse_url(url: str, question: str = "") -> str:
     """
     Browse any URL with headless Chromium and return the page text.
-    Blocked: localhost, internal IPs, non-http(s) schemes (prevents SSRF).
+    Blocked: localhost, internal IPs, non-http(s) schemes, hex/octal IPs (prevents SSRF).
     """
     from urllib.parse import urlparse
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
         return "URL not allowed: only http/https supported."
-    if parsed.hostname and parsed.hostname.lower() in _BLOCKED_HOSTS:
+    hostname = (parsed.hostname or "").lower()
+    if hostname in _BLOCKED_HOSTS or _BLOCKED_IP_RE.match(hostname):
         return "URL not allowed: internal addresses are blocked."
     content = _run(_fetch_page(url, timeout=20000))
     if not content:

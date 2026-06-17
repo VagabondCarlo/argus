@@ -1,5 +1,6 @@
 import logging
 import httpx
+import secrets
 import functools
 from datetime import time, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -26,7 +27,11 @@ from analyst.data.openclaw_client import ask_openclaw, needs_live_research, buil
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-AUTHORIZED_CHAT_ID = int(config.TELEGRAM_CHAT_ID)
+try:
+    AUTHORIZED_CHAT_ID = int(config.TELEGRAM_CHAT_ID)
+except (TypeError, ValueError):
+    AUTHORIZED_CHAT_ID = None
+    logger.warning("TELEGRAM_CHAT_ID not set — owner commands disabled until configured")
 ET = ZoneInfo("America/New_York")
 
 
@@ -287,7 +292,9 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def _has_master_key(args: list) -> bool:
-    return config.MASTER_KEY and config.MASTER_KEY in args
+    if not config.MASTER_KEY:
+        return False
+    return any(secrets.compare_digest(config.MASTER_KEY, arg) for arg in args)
 
 
 LOCKED_MSG = (
@@ -867,12 +874,16 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Notification helpers ───────────────────────────────────────────────────────
 
 def send_sync_notification(text: str):
-    """Send a message to Mike's iPhone from non-async code."""
+    """Send a message to the owner from non-async code (executor/analyst threads)."""
     import requests
-    requests.post(
-        f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage",
-        json={"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
-    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": config.TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
+            timeout=10,
+        )
+    except Exception as e:
+        logger.warning(f"Notification failed: {e}")
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────

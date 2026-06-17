@@ -10,6 +10,7 @@ from analyst.data.universe_extended import FOREX_PAIRS, METALS_PAIRS, CRYPTO_PAI
 from analyst.data.screener import run_prescreen, filter_by_market_regime
 from analyst.data.market import get_market_snapshot
 from analyst.data.multi_asset import get_extended_snapshot
+from analyst.data.social_aggregator import get_all_social_tickers
 from analyst.sentiment.analyzer import get_spy_context
 from analyst.signals.technical import score_snapshot
 from shared.database import save_signal, get_todays_signals, get_conn
@@ -116,13 +117,34 @@ def run_scan(full_universe: bool = False) -> list[dict]:
 
     logger.info(f"Snapshots fetched: {len(snapshots)}/{len(candidates)}")
 
-    # Step 5: Score each snapshot
+    # Step 5a: Pull social conviction once for the whole scan (cached per day)
+    try:
+        social_map = {s["ticker"]: s for s in get_all_social_tickers(min_mentions=2)}
+    except Exception as e:
+        logger.warning(f"Social scan failed, continuing without it: {e}")
+        social_map = {}
+
+    # Step 5b: Score each snapshot, apply social modifier
     for ticker, snapshot in snapshots.items():
         signal = score_snapshot(snapshot)
 
         action = signal.get("action", "WATCH")
         confidence = signal.get("confidence", 0.0)
         risk_reward = signal.get("risk_reward", 0.0)
+
+        # Social modifier: cross-platform buzz adjusts confidence ±0.04
+        social = social_map.get(ticker)
+        if social:
+            sent = social.get("sentiment_label", "neutral")
+            cross = social.get("cross_platform", False)
+            boost = 0.04 if cross else 0.02
+            if (action == "BUY" and sent == "bullish") or (action == "SELL" and sent == "bearish"):
+                confidence = min(confidence + boost, 0.88)
+                signal["reasoning"] += f" Social: {sent} ({', '.join(social['platforms'])})."
+            elif (action == "BUY" and sent == "bearish") or (action == "SELL" and sent == "bullish"):
+                confidence = max(confidence - boost, 0.50)
+                signal["reasoning"] += f" ⚠️ Social headwind: {sent} sentiment on {', '.join(social['platforms'])}."
+            signal["confidence"] = round(confidence, 2)
 
         # Update signals analyzed count
         with get_conn() as conn:

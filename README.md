@@ -2,7 +2,7 @@
 
 > *Named for the all-seeing giant of Greek mythology. Argus never sleeps.*
 
-Argus is a fully autonomous, multi-agent AI trading system built on consumer hardware. It continuously scans equities, forex, precious metals, and crypto — scores opportunities using a locally-hosted large language model — and executes only when two independent agents agree the trade meets a high confidence threshold. Capital protection first, growth second.
+Argus is a fully autonomous, multi-agent AI trading system built on consumer hardware. It watches equities, forex, precious metals, and crypto around the clock — scores opportunities using pure technical analysis reinforced by social intelligence — and executes only when signals clear a calibrated confidence threshold with capital protection rules in place.
 
 Built as a functional portfolio piece demonstrating applied AI, distributed systems, and real-world financial engineering.
 
@@ -12,215 +12,154 @@ Built as a functional portfolio piece demonstrating applied AI, distributed syst
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     ANALYST AGENT (Mac Mini 1)                  │
+│                       ANALYST AGENT                             │
 │                                                                 │
-│  500+ equity tickers + forex + metals + crypto universe         │
-│           ↓                                                     │
+│  500+ equity tickers + 9 forex pairs + 5 metals + 9 crypto     │
+│                          ↓                                      │
 │  Pre-screen: volume spike, price action, regime filter          │
-│           ↓                                                     │
-│  Technical Analysis (RSI, MACD, Bollinger Bands, EMA)           │
-│           ↓                                                     │
-│  Three-Committee LLM Scoring (Llama 3.1 8B — fully local)      │
-│    ├─ Fundamental Quality  → moat, margin of safety, entry      │
-│    ├─ Macro Regime         → economic cycle, dollar, SPY        │
-│    └─ Technical Execution  → R/R ≥ 2:1, volume, clean entry    │
-│           ↓                                                     │
-│  Signal ≥ 75%  ───────────────────────────────────────► Execute │
-│  Signal 70–75% ─────────────────► POST to Executor /audit      │
-│  Signal < 70%  → HOLD                                          │
+│                          ↓                                      │
+│  Parallel snapshot fetch (ThreadPoolExecutor)                   │
+│                          ↓                                      │
+│  Pure Technical Scoring (RSI, MACD, EMA, Bollinger, Volume)    │
+│  + Social Modifier (Reddit · Bluesky · Truth Social)           │
+│                          ↓                                      │
+│  Signal ≥ 66%  ──────────────────────────────────► Executor    │
+│  Signal 62–66% ──────────────────────────────────► DB (track)  │
+│  Signal < 62%  → filtered                                      │
 └─────────────────────────────────────────────────────────────────┘
                               │
                     REST API (local network)
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    EXECUTOR AGENT (Mac Mini 1)                  │
+│                      EXECUTOR AGENT                             │
 │                                                                 │
-│  Independent Risk Desk Audit (second LLM pass)                  │
-│    ├─ Timing verdict   → Is right now the ideal entry?         │
-│    ├─ Worst case       → Realistic downside if wrong?          │
-│    ├─ Counter-thesis   → What makes this trade fail?           │
-│    └─ Execution quality → Clean entry or chasing?              │
-│           ↓                                                     │
-│  Audit ≥ 75%  → Execute via Alpaca Paper Trading API           │
-│  Audit < 75%  → Veto with full explanation logged              │
-│                                                                 │
-│  Hard risk controls:                                            │
+│  Market hours check → stock signals only                        │
+│  Open position check → no double-entry                          │
+│                          ↓                                      │
+│  Risk controls:                                                 │
 │    • 2% stop-loss per trade                                    │
 │    • Max 40% position size                                     │
 │    • Max 3 trades/week (PDT compliance)                        │
 │    • 6% weekly loss kill switch                                │
+│                          ↓                                      │
+│  Alpaca Paper Trading API → fractional market order + GTC stop │
 └─────────────────────────────────────────────────────────────────┘
                               │
           ┌───────────────────┼───────────────────┐
           ▼                   ▼                   ▼
-   MacBook Pro          iPhone (owner)     Telegram Channels
- (Dev / SSH)      @ArgusVagabondBot      Tier 1 — Free Public
-                  Private commands       Tier 2 — Paid Private
-                  System control         3× daily broadcasts
-                  Conversational AI
+      Dev Machine        Telegram Bot         Broadcast Channels
+      (SSH remote)    @ArgusVagabondBot      Tier 1 — Free Public
+                      Owner + Guest UI       Tier 2 — Paid Private
+                      System control         3× daily, 7 days/week
 ```
 
 ---
 
-## The Three-Committee Framework
+## Scan Schedule — Always On
 
-Every signal passes through three independent analytical filters before scoring above 75%. All three must agree — a single veto caps confidence at 65% and blocks execution.
+Argus watches the market 24 hours a day, 7 days a week. Scan frequency adjusts by session; execution only fires during NYSE market hours.
 
-| Committee | Role | What It Asks |
+| Session (ET) | Assets Scanned | Frequency |
 |---|---|---|
-| **Fundamental Quality** | Is the underlying asset fundamentally sound? | Is there a real thesis — moat, margin of safety, macro divergence, genuine adoption? Or just momentum on a weak foundation? |
-| **Macro Regime** | Does the economic environment support this direction? | Is the Fed tightening or easing? Dollar strengthening or weakening? Is SPY confirming the move? |
-| **Technical Execution** | Is the setup precise enough to act on? | Is R/R ≥ 2:1? Does volume confirm? Is this a real breakout or a trap? |
+| Pre-market 07:00–09:30 | Stocks (full universe) + crypto + forex + metals | Every 30 min |
+| Market 09:30–16:00 | Stocks (core universe) + crypto + forex + metals | Every 15 min |
+| After-hours 16:00–20:00 | Stocks + crypto + forex + metals | Every 30 min |
+| Overnight 20:00–07:00 | Crypto + forex + metals only | Every 60 min |
 
-When all three align in a strong regime, confidence can reach 90%. This mirrors how Autopilot attaches to known-good conditions — Argus attaches to setups where every filter agrees.
-
-> All analysis is AI-generated using institutionally-inspired frameworks. Argus does not quote, represent, or affiliate with any real investor or financial institution.
-
----
-
-## Two-Stage Audit Pipeline
-
-Argus uses a challenger model architecture: the Analyst and Executor run **separate LLM instances with different directives** — optimist vs. skeptic.
-
-```
-Analyst scores 72%  →  "Possible setup — needs a second opinion"
-                              ↓
-                    Executor Risk Desk audits independently
-                              ↓
-              Audit scores 78%  →  TRADE EXECUTES
-              Audit scores 61%  →  VETOED (reason logged)
-```
-
-The Analyst finds opportunities. The Executor stress-tests them. Capital only moves when both agree.
+Deduplication: stocks skip if scored within the last 4 hours. Extended assets skip if scored within 2 hours.
 
 ---
 
-## Multi-Asset Broadcast System
+## Scoring Engine
 
-Beyond trading equities, Argus runs a daily intelligence broadcast across **4 asset classes** sent to two Telegram channel tiers.
+Every signal is scored in two passes.
 
-### Asset Classes Covered
+### Pass 1 — Pure Technical (instant, no LLM)
 
-| Class | Universe | Data Source |
+Weighted scoring across 6 indicators:
+
+| Indicator | Max BUY contribution | Max SELL contribution |
 |---|---|---|
-| Stocks | 15 highest-liquidity U.S. equities (AAPL, NVDA, TSLA, etc.) | yfinance |
-| Forex | 9 major pairs (EUR/USD, GBP/JPY, AUD/USD, etc.) | yfinance |
-| Precious Metals | Gold, Silver, Platinum, Palladium, Copper futures | yfinance |
-| Crypto | BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK | yfinance |
+| RSI | +0.14 (oversold < 30) | +0.14 (overbought > 70) |
+| MACD cross | +0.12 (bullish) | +0.12 (bearish) |
+| EMA 9 vs 21 | +0.08 (trending up) | +0.08 (trending down) |
+| Bollinger position | +0.06 (near lower band) | +0.06 (near upper band) |
+| Volume ratio | +0.05 (> 1.5× average) | +0.05 (> 1.5× average) |
+| Session change | +0.04 (> +1.5%) | +0.04 (< −1.5%) |
 
-### Broadcast Schedule (ET, 7 days/week)
+- Score ≥ 0.15, buy > sell → **BUY**, confidence = `min(0.50 + score, 0.82)`
+- Score ≥ 0.15, sell > buy → **SELL**, confidence = `min(0.50 + score, 0.82)`
+- Otherwise → **WATCH**, confidence = `min(0.50 + max(score), 0.65)`
 
-| Time | Label | Content |
+R/R is fixed at 2:1 for all stock signals (4% target / 2% stop).
+
+### Pass 2 — Social Modifier (±0.02 to ±0.04)
+
+Reddit, Bluesky, and Truth Social conviction data is applied as a lightweight modifier:
+
+| Condition | Adjustment |
+|---|---|
+| Cross-platform buzz (2+ platforms) + sentiment aligns with signal | +0.04 |
+| Single platform + sentiment aligns | +0.02 |
+| Sentiment opposes signal direction | −0.02 |
+
+Social data refines confidence — it does not gate signals. Fetched once per scan cycle and cached for the day.
+
+---
+
+## Signal Thresholds
+
+| Confidence | What Happens |
+|---|---|
+| ≥ 66% BUY/SELL | Saved to DB + executor places trade during market hours |
+| 62–66% BUY/SELL | Saved to DB for tracking, not executed |
+| ≥ 62% WATCH | Saved to DB, tracked only — never executed |
+| < 62% | Filtered out |
+
+---
+
+## Multi-Asset Broadcast
+
+Three times daily, Argus sends market intelligence to both Telegram channels.
+
+### Schedule (ET, 7 days/week)
+
+| Time | Session |
+|---|---|
+| **8:15 AM** | Pre-market — setups to watch at the open |
+| **12:00 PM** | Midday — live intraday setups |
+| **4:30 PM** | After-market — next day preview |
+
+### Channel Tiers
+
+**Tier 1 — Free Public**
+- 1 signal per asset class (4 total) — second-best confidence pick
+- Confidence score and plain-language reasoning
+- One-line conservative execution hint
+- Upgrade CTA to Tier 2 on every broadcast
+
+**Tier 2 — Paid Private**
+- Top 3 signals per asset class (up to 12 total)
+- Full entry price, stop-loss, price target, R/R ratio
+- Full reasoning per signal
+- Execution playbook: conservative / moderate / aggressive approach per asset class
+
+---
+
+## Social Intelligence
+
+Argus aggregates retail sentiment from multiple free platforms — no paid API required for core functionality:
+
+| Platform | Weight | Notes |
 |---|---|---|
-| **8:15 AM** | 🌅 Pre-Market Picks | Setups to watch at the 9:30 open |
-| **12:00 PM** | ☀️ Midday Update | Live setups with fresh intraday data |
-| **4:30 PM** | 🌙 Next Day Preview | What to watch for tomorrow's open |
+| Twitter/X | ×3.0 | Optional — requires Bearer token |
+| Reddit WSB | ×2.0 | r/wallstreetbets — free, no auth needed |
+| Reddit General | ×1.0–1.5 | 25 subreddits: US, UK, Asia, Australia |
+| Bluesky | ×0.8 | Free public AT Protocol API |
+| Truth Social | ×0.5 | Mastodon-compatible, useful for energy/defense names |
 
-Forex and crypto markets never close — broadcasts run all 7 days.
-
-### Two-Tier Channel Structure
-
-**Tier 1 — Free Public Channel**
-- 1 signal per asset class (4 total) — the second-best confidence pick
-- The top pick per class is reserved for Tier 2
-- Confidence score with plain-language explanation of what it means
-- One-line execution hint (conservative approach)
-- Clear upgrade path to Tier 2 on every broadcast
-
-**Tier 2 — Paid Private Channel**
-- Top 3 signals per asset class (12 total)
-- Full entry price, stop-loss, price target, and R/R ratio
-- Three-committee reasoning for every pick
-- Full execution playbook per signal (see below)
-
----
-
-## Execution Suggestion Engine
-
-Every signal in Tier 2 includes a "how some traders approach this setup" breakdown — not directives, but the instruments and methods traders commonly use in similar situations, ranked by risk level.
-
-| Risk Level | Stocks | Forex | Metals | Crypto |
-|---|---|---|---|---|
-| 🟢 Conservative | Shares with a stop order | Spot forex via broker | GLD/SLV/PPLT ETF | Spot on Coinbase/Kraken |
-| 🟡 Moderate | Weekly call/put options | Currency ETF (FXE, FXB…) | Options on ETF, mining stocks (GDX) | IBIT/ETHA ETF or options |
-| 🔴 Aggressive | 0DTE call/put (intraday scalp) | — | /GC /SI futures | — |
-
-Tier 1 shows one conservative suggestion per pick. Tier 2 shows all three risk tiers with specific context and risk notes.
-
-Every suggestion includes a DYOR reminder. Argus is not a financial advisor — these are educational suggestions only.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| LLM Engine | Llama 3.1 8B via Ollama (fully local — no API cost, no data sent out) |
-| Broker API | Alpaca Markets paper trading |
-| Market Data | yfinance (equities, forex, metals, crypto) |
-| News/Sentiment | Multi-source RSS (Yahoo Finance, CNBC, MarketWatch) |
-| Web Scraping | requests + BeautifulSoup (Finviz — analyst ratings, short interest) |
-| Browser Automation | Playwright + headless Chromium (JS-heavy sites: StockTwits, Barchart, CoinGecko) |
-| Research Agent | OpenClaw (self-hosted AI browser agent, powered by local Ollama) |
-| Notifications | Telegram Bot (`@ArgusVagabondBot`) + 2 broadcast channels |
-| Agent API | FastAPI + Uvicorn (Analyst :8001, Executor :8002) |
-| Session Management | tmux (persistent, survives SSH disconnect) |
-| Remote Access | Tailscale (WireGuard VPN — SSH from anywhere) |
-| Database | SQLite (signals, trades, daily stats) |
-| Language | Python 3.11 |
-| Hardware | Apple Mac Mini M2 (16GB RAM) + MacBook Pro |
-
----
-
-## Market Coverage
-
-Argus does not watch a fixed watchlist for equities. It scans the whole market.
-
-- **Full universe:** S&P 500 + 300 liquid growth/momentum names (pre-market scan)
-- **Core universe:** ~300 highest-liquidity names (intraday scans every 30 min)
-- **Pre-screen filters:** min $5 price, 500K avg volume, 1.5x volume spike, 1.5% price move
-- **Regime filter:** SPY direction adjusts candidate ranking before LLM scoring
-- **Broadcast universe:** 9 forex pairs, 5 metals, 9 crypto assets scanned 3× daily
-
----
-
-## Telegram Interface — `@ArgusVagabondBot`
-
-### Owner Commands (private — authorized user only)
-
-| Command | Action |
-|---|---|
-| `/status` | Live system health — both agents online/offline, trade count |
-| `/account` | Paper trading balance, buying power, P&L |
-| `/signals` | All signals generated today with confidence scores |
-| `/report` | Full mid-day summary |
-| `/history` | Last 10 executed trades |
-| `/pause [key]` | Pause all trading (positions held) |
-| `/resume [key]` | Resume trading |
-| `/stop [key]` | Emergency stop — halt all activity |
-| `/threshold [value] [key]` | Adjust confidence threshold live |
-| `/config` | View current risk parameters |
-
-Destructive commands require the master authorization key.
-
-### Guest Commands (open to all)
-
-| Command | Action |
-|---|---|
-| `/predictions` | Today's highest-confidence trade reads |
-| `/suggestions` | Setups with entry, stop-loss, and target |
-| `/setups` | Signals at 65%+ confidence |
-| `/news` | Top 3 market-moving headlines with links |
-| `/research TICKER` | Live browser lookup — social sentiment, options flow, insider summary |
-
-Guests can also talk to Argus in plain text. It responds with market analysis and trading education — always framed as suggestions, never directives. Ask it about a stock, a forex pair, what's moving, or anything markets-related.
-
-### Owner Daily Reports (ET, weekdays)
-
-- 🌅 **8:30 AM** — Pre-market: signals ready, what to watch at open
-- ☀️ **12:30 PM** — Mid-day: trades executed, open positions, P&L
-- 🌙 **4:30 PM** — After-market: full day recap, tomorrow's outlook
+Conviction scores are used as confidence modifiers on top of technical scoring. Cross-platform signals (trending on 2+ platforms simultaneously) carry the strongest weight.
 
 ---
 
@@ -228,81 +167,103 @@ Guests can also talk to Argus in plain text. It responds with market analysis an
 
 | Rule | Value | Enforced By |
 |---|---|---|
-| Minimum confidence to trade | 75% | Both agents |
-| Two-agent consensus required | Analyst + Executor | Architecture |
+| Minimum confidence to execute | 66% | Executor |
+| Asset type restriction | Stocks only via Alpaca | Executor filter |
+| No double-entry | One position per ticker | Open position check |
 | Max trades per week | 3 (PDT compliance) | Executor hard block |
 | Max position size | 40% of account | Risk manager |
-| Stop-loss per trade | 2% | Alpaca stop order |
+| Stop-loss per trade | 2% | GTC stop order |
 | Weekly loss kill switch | −6% of account | Auto-halt |
-| Minimum R/R ratio | 2:1 | Hard cap on confidence |
-| RSI overbought block | RSI > 75 = no BUY | LLM + hard rule |
+| Minimum R/R ratio | 2:1 | Scoring engine |
+| Market hours gate | NYSE hours only | Executor pre-check |
+
+---
+
+## Telegram Interface
+
+### Owner Commands
+
+| Command | Action |
+|---|---|
+| `/status` | Live system health — both agents, trade count, signals today |
+| `/account` | Paper trading balance, buying power, P&L |
+| `/signals` | All signals generated today with confidence scores |
+| `/report` | Full summary |
+| `/history` | Last 10 executed trades |
+| `/pause` | Pause all trading (positions held) |
+| `/resume` | Resume trading |
+| `/stop` | Emergency stop |
+| `/threshold` | Adjust confidence threshold live |
+| `/testbroadcast` | Fire an on-demand broadcast immediately |
+
+Destructive commands require the master authorization key passed as an argument.
+
+### Guest Commands
+
+| Command | Action |
+|---|---|
+| `/predictions` | Today's highest-confidence trade reads |
+| `/suggestions` | Setups with entry, stop-loss, and target |
+| `/setups` | Signals at threshold confidence |
+| `/news` | Top market-moving headlines |
+| `/research TICKER` | Live social sentiment and options flow lookup |
+
+Guests can talk to Argus in plain text — ask about a ticker, a forex pair, or anything markets-related. Rate-limited to 2 questions per 4-hour window per user.
+
+### Owner Daily Reports (ET, weekdays)
+
+| Time | Report |
+|---|---|
+| 8:30 AM | Pre-market — signals ready, what to watch at open |
+| 12:30 PM | Mid-day — trades executed, open positions, P&L |
+| 4:30 PM | After-market — full day recap, tomorrow's outlook |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Signal Scoring | Pure technical scoring engine (custom, no API cost) |
+| LLM Engine | Llama 3.1 8B via Ollama — local only, no data leaves machine |
+| Broker API | Alpaca Markets paper trading |
+| Market Data | yfinance (equities, forex, metals, crypto) |
+| Social Intelligence | Reddit, Bluesky, Truth Social — no paid API required |
+| News | Multi-source RSS (Yahoo Finance, CNBC, MarketWatch) |
+| Web Scraping | requests + BeautifulSoup (Finviz — analyst ratings, short interest) |
+| Browser Automation | Playwright + headless Chromium (JS-rendered pages) |
+| Research Agent | OpenClaw (self-hosted AI browser agent) |
+| Notifications | Telegram Bot + 2 broadcast channels |
+| Agent API | FastAPI + Uvicorn (Analyst :8001, Executor :8002) |
+| Database | SQLite (signals, trades, daily_stats) |
+| Session Management | tmux |
+| Remote Access | Tailscale (WireGuard VPN) |
+| Language | Python 3.11 |
+| Hardware | Apple Mac Mini M2 (16GB RAM) |
+
+---
+
+## Market Coverage
+
+**Equities**
+- Full universe: S&P 500 + ~300 liquid growth/momentum names (pre-market)
+- Core universe: ~300 highest-liquidity names (intraday)
+- Pre-screen filters: min $5 price · 500K avg volume · 1.5× volume spike · 1.5% move · regime filter
+
+**Extended (24/7)**
+- Forex: EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD, EUR/JPY, GBP/JPY
+- Metals: Gold, Silver, Platinum, Palladium, Copper (futures)
+- Crypto: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOGE, LINK
 
 ---
 
 ## Results
 
-*Paper trading in progress. Live results will be logged here as trades execute.*
+*Paper trading live as of June 2026. 30-day minimum track record before any live capital consideration.*
 
 | Week | Trades | Win Rate | P&L |
 |---|---|---|---|
-| — | — | — | — |
-
----
-
-## Data Intelligence Pipeline
-
-Every signal Argus generates is backed by 4 layers of data — not just price charts.
-
-```
-Layer 1 — PRICE & TECHNICALS (yfinance)
-  RSI, MACD, Bollinger Bands, EMA, Volume — standard but precise
-
-Layer 2 — FUNDAMENTAL & INSIDER (yfinance extended + Finviz scraper)
-  Analyst consensus, price targets, insider buy/sell 90-day window,
-  short interest %, earnings proximity (hard confidence cap <7 days)
-
-Layer 3 — SOCIAL & OPTIONS SENTIMENT (Playwright browser automation)
-  StockTwits bullish/bearish vote counts, Barchart unusual options flow,
-  CoinGecko on-chain sentiment for crypto — JS-rendered pages that
-  block normal scrapers
-
-Layer 4 — ON-DEMAND DEEP RESEARCH (OpenClaw AI research agent)
-  Any page, any site, live. Triggered via /research in Telegram or
-  during signal analysis. Uses local Ollama — no cloud, no data leaks.
-  Targets: SEC EDGAR, OpenInsider, Reddit, StockTwits, DailyFX, and more.
-```
-
----
-
-## Changelog
-
-### v0.4 — Browser Intelligence + OpenClaw (Current)
-- **Playwright scraper** (`analyst/data/browser_scraper.py`): headless Chromium handles JS-rendered pages that block standard requests — StockTwits social sentiment, Barchart unusual options flow, CoinGecko on-chain data
-- **OpenClaw research agent** installed on Mac Mini with Ollama backend — self-hosted AI browser for on-demand deep research across any site
-- **`/research TICKER`** Telegram command: live browser lookup returns social sentiment and options flow directly in chat (open to all users)
-- **Execution suggestion engine** (`analyst/signals/execution.py`): every signal now includes "how some traders approach this setup" — conservative/moderate/aggressive options per asset class with DYOR disclaimer
-
-### v0.3 — Web Scraper + Multi-Asset Enrichment
-- **Web scraper layer** (`analyst/data/web_scraper.py`): Finviz HTML scraping for analyst ratings, short interest, price targets; yfinance extended for earnings calendar, insider transactions, analyst consensus
-- **Earnings proximity hard cap**: if earnings are within 7 days, confidence is capped at 65% — binary events cannot be predicted by technicals
-- **Insider activity signal**: 90-day buy/sell window fed into LLM as Fundamental Quality context
-- **Three-committee framework de-attributed**: removed all direct quotes from real investors to avoid legal exposure; framework preserved, attribution removed
-
-### v0.2 — Multi-Asset Broadcast + Two-Tier Channel System
-- **4-asset-class coverage**: added forex (9 pairs), precious metals (5), crypto (9) via yfinance extended universe
-- **Multi-asset analyzer** (`analyst/sentiment/analyzer_extended.py`): adapted three-committee framework for non-equity assets — currency divergence, inflation regime, crypto adoption thesis
-- **3× daily broadcasts**: 8:15 AM pre-market, 12:00 PM midday, 4:30 PM next-day preview — runs 7 days/week (forex and crypto don't close)
-- **Two-tier Telegram channels**: Tier 1 (free public) shows 2nd-best pick per class with execution hint; Tier 2 (paid private) shows top 3 per class with full entry/stop/target and committee reasoning
-- **Suggestion-only language**: all execution guidance framed as "some traders consider..." — never directives
-
-### v0.1 — Core Trading System
-- Two-agent architecture: Analyst (FastAPI :8001) + Executor (FastAPI :8002)
-- Three-committee LLM framework (Fundamental / Macro / Technical) on Llama 3.1 8B
-- Two-stage audit: Analyst 70–75% → Executor independent stress-test → execute if ≥75%
-- Alpaca paper trading API integration with full risk controls (2% stop, 40% max position, 3/week PDT limit, 6% weekly kill switch)
-- Telegram bot with owner control + guest conversational mode
-- Full-universe equity scan: S&P 500 + 300 liquid names, concurrent ThreadPoolExecutor
-- tmux session management, launchd auto-start, Tailscale remote SSH
+| Week 1 (Jun 16) | In progress | — | — |
 
 ---
 
@@ -312,87 +273,93 @@ Layer 4 — ON-DEMAND DEEP RESEARCH (OpenClaw AI research agent)
 argus/
 ├── analyst/
 │   ├── data/
-│   │   ├── universe.py           # S&P 500 + 500-ticker equity universe
-│   │   ├── universe_extended.py  # Forex, metals, crypto universe definitions
-│   │   ├── screener.py           # Concurrent pre-screen (volume, price)
-│   │   ├── market.py             # Technical indicators (RSI, MACD, BB, EMA)
-│   │   ├── multi_asset.py        # Snapshots for forex, metals, crypto
-│   │   ├── news.py               # NewsAPI integration
-│   │   ├── market_news.py        # RSS headlines (/news command)
-│   │   ├── web_scraper.py        # Finviz + yfinance extended (insider, analyst, earnings)
-│   │   └── browser_scraper.py    # Playwright headless browser (StockTwits, Barchart, CoinGecko)
+│   │   ├── universe.py             # Equity universe definitions
+│   │   ├── universe_extended.py    # Forex, metals, crypto universe
+│   │   ├── screener.py             # Pre-screen filters
+│   │   ├── market.py               # Technical indicator calculation
+│   │   ├── multi_asset.py          # Snapshots for non-equity assets
+│   │   ├── news.py                 # RSS news aggregation
+│   │   ├── market_news.py          # Headline fetcher
+│   │   ├── web_scraper.py          # Finviz + extended fundamental data
+│   │   ├── browser_scraper.py      # Playwright headless browser
+│   │   └── social_aggregator.py    # Reddit, Bluesky, Truth Social scoring
 │   ├── sentiment/
-│   │   ├── analyzer.py           # Three-committee LLM framework (equities)
-│   │   └── analyzer_extended.py  # Adapted framework for forex/metals/crypto
+│   │   ├── analyzer.py             # LLM framework (equities — research path)
+│   │   └── analyzer_extended.py    # LLM framework (forex/metals/crypto)
 │   ├── signals/
-│   │   ├── scorer.py             # Full equity scan pipeline + signal routing
-│   │   ├── broadcaster.py        # Multi-asset broadcast engine (3× daily)
-│   │   └── execution.py          # Execution suggestion engine (how to play it)
-│   └── main.py                   # FastAPI service (port 8001)
+│   │   ├── technical.py            # Shared pure technical scorer
+│   │   ├── scorer.py               # 24/7 scan pipeline + signal routing
+│   │   ├── broadcaster.py          # Multi-asset broadcast engine
+│   │   └── execution.py            # Execution suggestion engine
+│   └── main.py                     # FastAPI service (port 8001)
 ├── executor/
 │   ├── audit/
-│   │   └── auditor.py            # Independent Risk Desk LLM audit
+│   │   └── auditor.py              # Independent Risk Desk audit
 │   ├── gateway/
-│   │   └── alpaca.py             # Alpaca paper trading API (lazy init)
+│   │   └── alpaca.py               # Alpaca paper trading API
 │   ├── risk/
-│   │   └── manager.py            # Position sizing, kill switch, weekly limits
-│   └── main.py                   # FastAPI service (port 8002) + /audit endpoint
+│   │   └── manager.py              # Position sizing, kill switch, limits
+│   └── main.py                     # FastAPI service (port 8002)
 ├── notifications/
-│   ├── bot.py                    # Telegram bot (owner + guest, conversational AI)
-│   └── reports.py                # Pre-market, mid-day, after-market report builders
+│   ├── bot.py                      # Telegram bot
+│   └── reports.py                  # Report builders
 ├── shared/
-│   ├── config.py                 # Environment config (inc. Tier 1/2 channel IDs)
-│   ├── database.py               # SQLite: signals, trades, daily_stats
-│   └── models.py                 # TradeSignal, TradeResult dataclasses
-├── display.py                    # Full-screen mission control terminal UI
-├── demo.py                       # Live demo — works outside market hours
-└── docs/
-    └── setup-log.md              # Full build log with blockers and resolutions
+│   ├── config.py                   # Environment config (no secrets stored here)
+│   ├── database.py                 # SQLite ORM
+│   └── models.py                   # Shared dataclasses
+├── docs/
+│   ├── changelog/                  # Version history
+│   │   ├── v0.1.md through v0.5.md
+│   └── setup-log.md
+├── display.py                      # Terminal mission control UI
+├── demo.py                         # Demo mode
+└── start_argus.sh                  # Service launcher
 ```
 
 ---
 
 ## Setup
 
-See [docs/setup-log.md](docs/setup-log.md) for the complete installation log.
-
-**Quick start:**
 ```bash
 git clone git@github.com:VagabondCarlo/argus.git
 cd argus
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ollama pull llama3.1:8b
-cp .env.example .env  # fill in credentials
-./start_argus.sh      # launches all services in tmux
+cp .env.example .env   # fill in your credentials — never commit this file
+./start_argus.sh       # launches all services in tmux
 ```
 
-**Remote access via Tailscale:**
-```bash
-ssh agent1  # resolves to Mac Mini via WireGuard — works from anywhere
-tmux attach -t argus
-# Ctrl+B then 0/1/2/3 to switch windows (analyst / bot / executor / display)
+**Required environment variables (`.env` only — never commit):**
 ```
+ALPACA_API_KEY
+ALPACA_SECRET_KEY
+ALPACA_BASE_URL
 
-**Environment variables required:**
-```
-ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL
-TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-TIER1_CHANNEL_ID   # free public broadcast channel
-TIER2_CHANNEL_ID   # paid private broadcast channel
-MASTER_KEY         # required for destructive Telegram commands
-CONFIDENCE_THRESHOLD, MAX_TRADES_PER_WEEK, ACCOUNT_CAPITAL
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+TIER1_CHANNEL_ID
+TIER2_CHANNEL_ID
+
+MASTER_KEY
+CONFIDENCE_THRESHOLD
+MAX_TRADES_PER_WEEK
+ACCOUNT_CAPITAL
+
+# Optional — activates Twitter/X social intelligence when available
+TWITTER_BEARER_TOKEN
 ```
 
 ---
 
 ## Mission
 
-Institutional-quality market intelligence has always been locked behind expensive terminals, private data feeds, and hedge fund resources. Argus exists to change that — broadcasting the same level of multi-asset analysis to anyone, regardless of account size.
+Institutional-quality market intelligence has always been locked behind expensive terminals, private data feeds, and hedge fund infrastructure. Argus exists to change that — broadcasting the same level of multi-asset analysis to anyone, regardless of account size.
 
 The free channel levels the playing field. The paid channel funds the infrastructure. The goal is fair play.
 
 ---
 
-*Built by VagabondCarlo — CySA+ candidate, AI systems builder*
-*Paper trading minimum 30 days before live capital deployment*
+*Built by VagabondCarlo — CySA+ candidate, AI systems builder*  
+*Paper trading minimum 30 days before live capital deployment*  
+*Version history: [docs/changelog/](docs/changelog/)*

@@ -1,3 +1,5 @@
+import io
+import requests
 import pandas as pd
 import yfinance as yf
 import logging
@@ -5,9 +7,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Curated universe: S&P 500 + high-volume NASDAQ + ETFs
-# Pulled once, cached. Updated weekly.
+# Pulled once per process, cached in memory.
 
 SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+_SP500_CACHE: list[str] = []
 
 # High-liquidity non-S&P names worth watching for day setups
 EXTRA_TICKERS = [
@@ -20,11 +23,18 @@ EXTRA_TICKERS = [
 
 
 def get_sp500_tickers() -> list[str]:
+    global _SP500_CACHE
+    if _SP500_CACHE:
+        return _SP500_CACHE
     try:
-        tables = pd.read_html(SP500_URL, header=0)
+        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        resp = requests.get(SP500_URL, headers=headers, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(io.StringIO(resp.text), header=0)
         sp500 = tables[0]["Symbol"].tolist()
-        # Clean symbols (some have dots like BRK.B → BRK-B for yfinance)
-        return [t.replace(".", "-") for t in sp500]
+        _SP500_CACHE = [t.replace(".", "-") for t in sp500]
+        logger.info(f"S&P 500 list fetched: {len(_SP500_CACHE)} tickers cached")
+        return _SP500_CACHE
     except Exception as e:
         logger.error(f"Failed to fetch S&P 500 list: {e}")
         return []

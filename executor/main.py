@@ -61,7 +61,7 @@ def _require_internal(credentials: HTTPAuthorizationCredentials = Depends(_beare
 # ── Signal watcher ─────────────────────────────────────────────────────────────
 
 def signal_watcher_loop():
-    """Checks for pending high-confidence signals every 5 minutes."""
+    """Checks for pending signals every 60s during market hours, 5min otherwise."""
     while True:
         with _state_lock:
             stopped = _stopped
@@ -73,7 +73,8 @@ def signal_watcher_loop():
                 process_pending_signals()
             except Exception as e:
                 logger.error(f"Signal watcher error: {e}")
-        time_module.sleep(300)
+        interval = 60 if _is_market_hours() else 300
+        time_module.sleep(interval)
 
 
 def process_pending_signals():
@@ -106,8 +107,10 @@ def process_pending_signals():
 
         # Signals already above threshold skip the audit and execute directly
         if conf >= config.CONFIDENCE_THRESHOLD:
-            execute_signal(signal, account)
-            return
+            traded = execute_signal(signal, account)
+            if traded:
+                return  # Real trade placed — one trade per cycle
+            continue  # Signal was skipped — move to next in queue
 
         # Signals in the 70-75% zone go through the executor's independent audit
         logger.info(f"Sending {signal['ticker']} to audit — analyst conf={conf:.0%}")
@@ -135,7 +138,8 @@ def process_pending_signals():
             logger.info(f"Audit blocked {signal['ticker']}: {audit.get('veto_reason','low confidence')}")
 
 
-def execute_signal(signal: dict, account: dict):
+def execute_signal(signal: dict, account: dict) -> bool:
+    """Returns True if a real trade was placed, False if signal was skipped."""
     ticker = signal["ticker"]
     side = signal["action"]
 
@@ -146,13 +150,13 @@ def execute_signal(signal: dict, account: dict):
         logger.info(f"Already holding {ticker} — skipping duplicate BUY")
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
-        return
+        return False
 
     if side == "SELL" and not existing:
         logger.info(f"No position in {ticker} — skipping SELL (no short selling)")
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
-        return
+        return False
 
     if side == "SELL" and existing:
         logger.info(f"Closing position: {ticker} at ~${existing['current_price']:.2f}")
@@ -160,7 +164,7 @@ def execute_signal(signal: dict, account: dict):
         if "error" in result:
             logger.error(f"Close failed {ticker}: {result['error']}")
             send_sync_notification(f"❌ *Close failed*: {ticker}\n_{result['error']}_")
-            return
+            return False
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
             conn.execute("""
@@ -172,27 +176,27 @@ def execute_signal(signal: dict, account: dict):
             f"✅ *Position closed*: {ticker}\n"
             f"Exit: ~${existing['current_price']:.2f} | P&L: ${existing['unrealized_pnl']:.2f}"
         )
-        return
+        return True
 
     # BUY on unowned stock — enter position
     price = get_latest_price(ticker)
     if not price:
         logger.error(f"Cannot get price for {ticker}")
-        return
+        return False
 
     qty = calculate_position_size(account["cash"], price)
     stop_price = calculate_stop_loss(price, side)
 
     if qty < 0.001:
         logger.warning(f"Position size too small for {ticker} at ${price}")
-        return
+        return False
 
     result = place_order(ticker, side, qty, stop_price)
 
     if "error" in result:
         logger.error(f"Order failed: {result['error']}")
         send_sync_notification(f"❌ *Trade failed*: {ticker} {side}\n_{result['error']}_")
-        return
+        return False
 
     # Mark signal as executed in database
     with get_conn() as conn:
@@ -223,6 +227,7 @@ def execute_signal(signal: dict, account: dict):
         f"_{signal['reasoning'][:120]}_"
     )
     logger.info(f"Executed: {side} {qty} {ticker} @ ${price}")
+    return True
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────

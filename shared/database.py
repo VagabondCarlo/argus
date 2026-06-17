@@ -121,9 +121,11 @@ def get_todays_trades():
     today = _utc_today()
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT t.*, s.ticker, s.action, s.reasoning
+            SELECT t.*, COALESCE(s.ticker, t.order_id) as ticker,
+                   COALESCE(s.action, 'BUY') as action,
+                   COALESCE(s.reasoning, '') as reasoning
             FROM trades t
-            JOIN signals s ON t.signal_id = s.id
+            LEFT JOIN signals s ON t.signal_id = s.id AND t.signal_id != 0
             WHERE date(t.executed_at) = ?
             ORDER BY t.executed_at DESC
         """, (today,)).fetchall()
@@ -133,9 +135,10 @@ def get_todays_trades():
 def get_trade_history(limit=10):
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT t.*, s.ticker, s.action
+            SELECT t.*, COALESCE(s.ticker, t.order_id) as ticker,
+                   COALESCE(s.action, 'BUY') as action
             FROM trades t
-            JOIN signals s ON t.signal_id = s.id
+            LEFT JOIN signals s ON t.signal_id = s.id AND t.signal_id != 0
             WHERE t.status = 'closed'
             ORDER BY t.closed_at DESC
             LIMIT ?

@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 60  # browser research can take a while
 
 
+def _sanitize_question(q: str) -> str:
+    """Strip non-printable and non-ASCII characters; cap length for subprocess safety."""
+    return re.sub(r'[^\x20-\x7E]', '', q)[:500]
+
+
 def ask_openclaw(question: str, timeout: int = DEFAULT_TIMEOUT) -> str:
     """
     Run one agent turn via `openclaw agent` CLI.
@@ -22,9 +27,12 @@ def ask_openclaw(question: str, timeout: int = DEFAULT_TIMEOUT) -> str:
     """
     if not is_openclaw_available():
         return ""
+    safe_question = _sanitize_question(question)
+    if not safe_question:
+        return ""
     try:
         result = subprocess.run(
-            ["openclaw", "agent", "--model", "ollama-local/llama3.1:8b", question],
+            ["openclaw", "agent", "--model", "ollama-local/llama3.1:8b", safe_question],
             capture_output=True,
             text=True,
             timeout=timeout,

@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from shared.config import config
 from shared.database import get_conn
 
@@ -7,9 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 def get_weekly_trade_count() -> int:
-    """Count trades executed since Monday of current week."""
-    from datetime import datetime, timedelta
-    today = datetime.utcnow().date()
+    """Count trades executed since Monday of current week (UTC)."""
+    today = datetime.now(timezone.utc).date()
     monday = today - timedelta(days=today.weekday())
     with get_conn() as conn:
         row = conn.execute(
@@ -20,9 +19,8 @@ def get_weekly_trade_count() -> int:
 
 
 def get_weekly_pnl() -> float:
-    """Sum of P&L for closed trades since Monday."""
-    from datetime import datetime, timedelta
-    today = datetime.utcnow().date()
+    """Sum of P&L for closed trades since Monday (UTC)."""
+    today = datetime.now(timezone.utc).date()
     monday = today - timedelta(days=today.weekday())
     with get_conn() as conn:
         row = conn.execute(

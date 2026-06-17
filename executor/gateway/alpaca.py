@@ -71,11 +71,12 @@ def get_open_positions():
 
 
 def place_order(ticker: str, side: str, qty: float, stop_loss_price: float) -> dict:
+    import math
     try:
         client = _get_trading()
         order_side = OrderSide.BUY if side == "BUY" else OrderSide.SELL
 
-        # Entry market order
+        # Entry market order (fractional ok with DAY)
         order = client.submit_order(MarketOrderRequest(
             symbol=ticker,
             qty=qty,
@@ -84,16 +85,20 @@ def place_order(ticker: str, side: str, qty: float, stop_loss_price: float) -> d
         ))
         logger.info(f"Order placed: {side} {qty} {ticker} | ID: {order.id}")
 
-        # Protective stop-loss order (opposite side)
-        stop_side = OrderSide.SELL if side == "BUY" else OrderSide.BUY
-        client.submit_order(StopOrderRequest(
-            symbol=ticker,
-            qty=qty,
-            side=stop_side,
-            time_in_force=TimeInForce.GTC,
-            stop_price=round(stop_loss_price, 2)
-        ))
-        logger.info(f"Stop-loss set at ${stop_loss_price:.2f} for {ticker}")
+        # Protective stop-loss — GTC requires whole shares; floor to int
+        stop_qty = int(math.floor(qty))
+        if stop_qty >= 1:
+            stop_side = OrderSide.SELL if side == "BUY" else OrderSide.BUY
+            client.submit_order(StopOrderRequest(
+                symbol=ticker,
+                qty=stop_qty,
+                side=stop_side,
+                time_in_force=TimeInForce.GTC,
+                stop_price=round(stop_loss_price, 2)
+            ))
+            logger.info(f"Stop-loss set at ${stop_loss_price:.2f} for {stop_qty} shares of {ticker}")
+        else:
+            logger.info(f"Position too small for GTC stop-loss on {ticker} (qty={qty:.4f})")
 
         return {
             "order_id": str(order.id),

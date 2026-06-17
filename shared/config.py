@@ -1,5 +1,4 @@
 import os
-import sys
 import logging
 from dotenv import load_dotenv
 
@@ -17,7 +16,6 @@ class Config:
     # Telegram
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-    # Broadcast channels (Mike must create these and add the bot as admin)
     TIER1_CHANNEL_ID = os.getenv("TIER1_CHANNEL_ID", "")   # free public channel
     TIER2_CHANNEL_ID = os.getenv("TIER2_CHANNEL_ID", "")   # paid private channel
 
@@ -30,15 +28,9 @@ class Config:
     # Master key — required for destructive commands
     MASTER_KEY = os.getenv("MASTER_KEY", "")
 
-
-config = Config()
-
-if not config.MASTER_KEY:
-    logger.critical("MASTER_KEY is not set — all owner commands are unprotected. Set it in .env and restart.")
-
-    # Trading rules — these are hard limits, not suggestions
+    # Trading rules — hard limits, not suggestions
     CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
-    MAX_TRADES_PER_WEEK = int(os.getenv("MAX_TRADES_PER_WEEK", "3"))
+    MAX_TRADES_PER_WEEK = int(os.getenv("MAX_TRADES_PER_WEEK", "25"))
     MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "0.40"))
     STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.02"))
     WEEKLY_LOSS_LIMIT = float(os.getenv("WEEKLY_LOSS_LIMIT", "0.06"))
@@ -52,3 +44,6 @@ if not config.MASTER_KEY:
 
 
 config = Config()
+
+if not config.MASTER_KEY:
+    logger.critical("MASTER_KEY is not set — all owner commands are unprotected. Set it in .env and restart.")

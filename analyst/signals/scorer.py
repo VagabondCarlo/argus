@@ -1,11 +1,13 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from analyst.data.universe import get_core_universe, get_full_universe
+from analyst.data.universe_extended import FOREX_PAIRS, METALS_PAIRS, CRYPTO_PAIRS
 from analyst.data.screener import run_prescreen, filter_by_market_regime
 from analyst.data.market import get_market_snapshot
+from analyst.data.multi_asset import get_extended_snapshot
 from analyst.sentiment.analyzer import get_spy_context
 from analyst.signals.technical import score_snapshot
 from shared.database import save_signal, get_todays_signals, get_conn
@@ -32,12 +34,13 @@ def is_premarket() -> bool:
     return now.replace(hour=7, minute=0) <= now < now.replace(hour=9, minute=30)
 
 
-def already_analyzed_today(ticker: str) -> bool:
-    today = date.today().isoformat()
+def recently_analyzed(ticker: str, hours: int = 4) -> bool:
+    """Return True if this ticker was already scored within the last N hours."""
+    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id FROM signals WHERE ticker=? AND date(generated_at)=?",
-            (ticker, today)
+            "SELECT id FROM signals WHERE ticker=? AND generated_at>=?",
+            (ticker, cutoff)
         ).fetchone()
     return row is not None
 
@@ -73,9 +76,9 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         logger.info(f"Weekly trade limit reached ({weekly_count}). No new signals needed.")
         return []
 
-    # Step 1: Universe
+    # Step 1: Universe — skip tickers scored in the last 4 hours
     tickers = get_full_universe() if full_universe else get_core_universe()
-    tickers = [t for t in tickers if not already_analyzed_today(t)]
+    tickers = [t for t in tickers if not recently_analyzed(t, hours=4)]
 
     if not tickers:
         logger.info("All tickers already analyzed today.")
@@ -206,4 +209,93 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         f"Scan done: {len(new_signals)} signals saved, "
         f"{len(above_threshold)} above threshold, {len(audit_candidates)} sent to audit"
     )
+    return new_signals
+
+
+def run_extended_scan() -> list[dict]:
+    """
+    24/7 scan of crypto, forex, and metals.
+    Uses pure technical scoring — no LLM, no pre-screen needed.
+    Re-scans each asset every 2 hours so overnight moves are caught.
+    """
+    spy_change, _ = get_spy_context()
+    trade_date = date.today().isoformat()
+
+    all_assets: dict[str, tuple[str, str]] = {}
+    for ticker, name in CRYPTO_PAIRS.items():
+        all_assets[ticker] = (name, "crypto")
+    for ticker, name in FOREX_PAIRS.items():
+        all_assets[ticker] = (name, "forex")
+    for ticker, name in METALS_PAIRS.items():
+        all_assets[ticker] = (name, "metal")
+
+    # Skip assets scored within the last 2 hours
+    to_scan = {t: v for t, v in all_assets.items() if not recently_analyzed(t, hours=2)}
+    if not to_scan:
+        logger.info("Extended scan: all assets scored recently — skipping")
+        return []
+
+    logger.info(f"Extended scan: {len(to_scan)} assets (crypto/forex/metals)")
+
+    def _fetch(ticker_name_type):
+        ticker, (name, asset_type) = ticker_name_type
+        try:
+            snap = get_extended_snapshot(ticker)
+            if snap:
+                snap["asset_type"] = asset_type
+                snap["display_name"] = name
+                snap["spy_change"] = spy_change
+            return snap
+        except Exception as e:
+            logger.warning(f"Extended snapshot failed for {ticker}: {e}")
+            return None
+
+    new_signals = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(_fetch, item): item[0] for item in to_scan.items()}
+        for fut in as_completed(futures):
+            ticker = futures[fut]
+            try:
+                snap = fut.result()
+                if not snap:
+                    continue
+
+                signal = score_snapshot(snap)
+                action = signal["action"]
+                confidence = signal["confidence"]
+
+                with get_conn() as conn:
+                    conn.execute("""
+                        INSERT INTO daily_stats (trade_date, signals_analyzed)
+                        VALUES (?, 1)
+                        ON CONFLICT(trade_date) DO UPDATE SET signals_analyzed = signals_analyzed + 1
+                    """, (trade_date,))
+
+                if action == "WATCH" or confidence >= 0.60:
+                    save_signal(
+                        ticker=ticker,
+                        action=action,
+                        confidence=confidence,
+                        price_target=signal["price_target"],
+                        stop_loss=signal["stop_loss"],
+                        reasoning=signal["reasoning"],
+                    )
+                    new_signals.append(signal)
+                    logger.info(f"SIGNAL [{signal['asset_type'].upper()}]: {ticker} {action} | conf={confidence:.0%}")
+
+            except Exception as e:
+                logger.error(f"Extended scan error for {ticker}: {e}")
+
+    above_threshold = [s for s in new_signals if s["confidence"] >= config.CONFIDENCE_THRESHOLD]
+    if above_threshold:
+        lines = [f"🌐 *{len(above_threshold)} extended signal(s)*\n"]
+        for s in above_threshold:
+            lines.append(
+                f"*{s.get('display_name', s['ticker'])}* {s['action']} — {s['confidence']:.0%}\n"
+                f"Entry: {s['price']:.4f} | Target: {s['price_target']:.4f} | Stop: {s['stop_loss']:.4f}\n"
+                f"_{s['reasoning']}_\n"
+            )
+        send_sync_notification("\n".join(lines))
+
+    logger.info(f"Extended scan done: {len(new_signals)} signals, {len(above_threshold)} above threshold")
     return new_signals

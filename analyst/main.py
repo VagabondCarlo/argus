@@ -3,11 +3,13 @@ import secrets
 import threading
 import time as time_module
 from contextlib import asynccontextmanager
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from shared.config import config
 from shared.database import init_db, get_todays_signals
-from analyst.signals.scorer import run_scan, is_market_hours, is_premarket
+from analyst.signals.scorer import run_scan, run_extended_scan, is_market_hours, is_premarket
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,37 +35,62 @@ def _require_internal(credentials: HTTPAuthorizationCredentials = Depends(_beare
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+_ET = ZoneInfo("America/New_York")
+
+
 def scan_loop():
     """
-    Scan schedule:
-    - Pre-market (7:00-9:30 AM ET): Full universe scan once to build the day's watchlist
-    - Market hours (9:30 AM-4:00 PM ET): Core universe scan every 30 minutes
-    - After hours: Sleep, wait for next session
-    """
-    pre_market_done = False
+    Argus never sleeps. Scans run 24/7 — stocks, crypto, forex, metals.
 
+    Frequencies by session (ET):
+    - Pre-market  07:00–09:30  →  stocks (full universe) + extended, every 30 min
+    - Market      09:30–16:00  →  stocks (core universe) + extended, every 15 min
+    - After-hours 16:00–20:00  →  stocks (core) + extended, every 30 min
+    - Overnight   20:00–07:00  →  extended only (crypto/forex/metals), every 60 min
+
+    Dedup: stocks skip if scored within 4 h; crypto/forex/metals skip if within 2 h.
+    Execution stays gated to market hours in the executor.
+    """
     while True:
         try:
-            if is_premarket() and not pre_market_done:
-                logger.info("Pre-market session — running full universe scan")
+            now = datetime.now(_ET)
+            hour = now.hour
+            weekday = now.weekday()  # 0=Mon … 6=Sun
+
+            if 7 <= hour < 9 or (hour == 9 and now.minute < 30):
+                # Pre-market
+                session = "pre-market"
                 run_scan(full_universe=True)
-                pre_market_done = True
-                time_module.sleep(600)
+                run_extended_scan()
+                interval = 1800
 
             elif is_market_hours():
-                pre_market_done = False
-                logger.info("Market hours — running core universe scan")
+                # Core trading session
+                session = "market"
                 run_scan(full_universe=False)
-                time_module.sleep(1800)  # 30 minutes
+                run_extended_scan()
+                interval = 900
+
+            elif 16 <= hour < 20 and weekday < 5:
+                # After-hours (stocks still have extended quotes)
+                session = "after-hours"
+                run_scan(full_universe=False)
+                run_extended_scan()
+                interval = 1800
 
             else:
-                # Outside trading hours — reset flag for next day
-                pre_market_done = False
-                time_module.sleep(300)
+                # Overnight — crypto and forex never close
+                session = "overnight"
+                run_extended_scan()
+                interval = 3600
+
+            logger.info(f"[{session}] scan cycle complete — next in {interval//60} min")
 
         except Exception as e:
             logger.error(f"Scan loop error: {e}")
-            time_module.sleep(60)
+            interval = 120
+
+        time_module.sleep(interval)
 
 
 @app.get("/status", dependencies=[Depends(_require_internal)])

@@ -18,7 +18,6 @@ def _utcnow() -> str:
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with get_conn() as conn:
-        _migrate(conn)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS signals (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +29,8 @@ def init_db():
                 reasoning   TEXT,
                 generated_at TEXT NOT NULL,
                 executed    INTEGER DEFAULT 0,
-                asset_type  TEXT DEFAULT 'stock'
+                asset_type  TEXT DEFAULT 'stock',
+                entry_price REAL
             );
 
             CREATE TABLE IF NOT EXISTS trades (
@@ -70,14 +70,19 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_guest_questions_user ON guest_questions(user_id, asked_at);
         """)
+        _migrate(conn)
 
 
 def _migrate(conn):
     """Apply schema changes to existing databases without dropping data."""
-    try:
-        conn.execute("ALTER TABLE signals ADD COLUMN asset_type TEXT DEFAULT 'stock'")
-    except Exception:
-        pass  # Column already exists
+    for stmt in [
+        "ALTER TABLE signals ADD COLUMN asset_type TEXT DEFAULT 'stock'",
+        "ALTER TABLE signals ADD COLUMN entry_price REAL",
+    ]:
+        try:
+            conn.execute(stmt)
+        except Exception:
+            pass  # Column already exists
 
 
 @contextmanager
@@ -91,13 +96,13 @@ def get_conn():
         conn.close()
 
 
-def save_signal(ticker, action, confidence, price_target, stop_loss, reasoning, asset_type="stock"):
+def save_signal(ticker, action, confidence, price_target, stop_loss, reasoning, asset_type="stock", entry_price=None):
     with get_conn() as conn:
         conn.execute("""
-            INSERT INTO signals (ticker, action, confidence, price_target, stop_loss, reasoning, generated_at, asset_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO signals (ticker, action, confidence, price_target, stop_loss, reasoning, generated_at, asset_type, entry_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (ticker, action, confidence, price_target, stop_loss, reasoning,
-              _utcnow(), asset_type))
+              _utcnow(), asset_type, entry_price))
 
 
 def get_todays_signals(min_confidence=0.0, asset_type: str | None = None):

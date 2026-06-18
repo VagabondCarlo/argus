@@ -146,6 +146,29 @@ def get_trade_history(limit=10):
     return [dict(r) for r in rows]
 
 
+def get_win_rate() -> dict:
+    """Lifetime win rate across all closed trades."""
+    with get_conn() as conn:
+        row = conn.execute("""
+            SELECT
+                COALESCE(SUM(wins), 0)   as total_wins,
+                COALESCE(SUM(losses), 0) as total_losses,
+                COALESCE(SUM(total_pnl), 0) as total_pnl
+            FROM daily_stats
+        """).fetchone()
+    total_wins   = row["total_wins"]
+    total_losses = row["total_losses"]
+    total_trades = total_wins + total_losses
+    win_rate = total_wins / total_trades if total_trades else 0.0
+    return {
+        "wins": total_wins,
+        "losses": total_losses,
+        "total_trades": total_trades,
+        "win_rate": win_rate,
+        "total_pnl": row["total_pnl"],
+    }
+
+
 def get_todays_stats():
     today = _utc_today()
     with get_conn() as conn:

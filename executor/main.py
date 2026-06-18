@@ -184,16 +184,34 @@ def execute_signal(signal: dict, account: dict) -> bool:
             logger.error(f"Close failed {ticker}: {result['error']}")
             send_sync_notification(f"❌ *Close failed*: {ticker}\n_{result['error']}_")
             return False
+
+        pnl = existing["unrealized_pnl"]
+        is_win = pnl >= 0
+        now_utc = datetime.now(timezone.utc).isoformat()
+        trade_date = datetime.now(timezone.utc).date().isoformat()
+
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
             conn.execute("""
-                INSERT INTO trades (signal_id, order_id, fill_price, quantity, executed_at, status)
-                VALUES (?, ?, ?, ?, ?, 'closed')
-            """, (signal["id"], "close", existing["current_price"], existing["qty"],
-                  datetime.now(timezone.utc).isoformat()))
+                INSERT INTO trades
+                  (signal_id, order_id, fill_price, quantity, executed_at, closed_at, close_price, pnl, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed')
+            """, (signal["id"], "close", existing["avg_entry"], existing["qty"],
+                  now_utc, now_utc, existing["current_price"], pnl))
+            conn.execute("""
+                INSERT INTO daily_stats (trade_date, wins, losses, total_pnl)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(trade_date) DO UPDATE SET
+                    wins      = wins      + excluded.wins,
+                    losses    = losses    + excluded.losses,
+                    total_pnl = total_pnl + excluded.total_pnl
+            """, (trade_date, 1 if is_win else 0, 0 if is_win else 1, pnl))
+
+        outcome = "✅ WIN" if is_win else "❌ LOSS"
         send_sync_notification(
-            f"✅ *Position closed*: {ticker}\n"
-            f"Exit: ~${existing['current_price']:.2f} | P&L: ${existing['unrealized_pnl']:.2f}"
+            f"{outcome} *{ticker}* position closed\n"
+            f"Entry: ${existing['avg_entry']:.2f} → Exit: ${existing['current_price']:.2f}\n"
+            f"P&L: ${pnl:+.2f} on {existing['qty']:.4f} shares"
         )
         return True
 

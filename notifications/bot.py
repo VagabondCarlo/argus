@@ -12,13 +12,14 @@ from telegram.ext import (
 from shared.config import config
 from shared.database import (
     init_db, get_todays_signals, get_todays_trades,
-    get_todays_stats, get_trade_history,
+    get_todays_stats, get_trade_history, get_win_rate,
     is_paid_user, add_paid_user, remove_paid_user, list_paid_users,
     count_recent_questions, record_question, RATE_LIMIT_MAX, RATE_LIMIT_HOURS,
 )
 from notifications.reports import (
     premarket_report, midday_report, aftermarket_report,
-    guest_welcome, guest_predictions, guest_suggestions, guest_high_probability
+    guest_welcome, guest_predictions, guest_suggestions, guest_high_probability,
+    full_disclaimer,
 )
 from analyst.data.market_news import get_market_news, format_news_report
 from analyst.data.browser_scraper import get_browser_enrichment, get_stocktwits_sentiment, browse_url
@@ -225,11 +226,17 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     analyst = await _get_analyst_status()
     executor = await _get_executor_status()
     stats = get_todays_stats()
+    wr = get_win_rate()
 
     analyst_state = "🟢 Online" if "error" not in analyst else "🔴 Offline"
     executor_state = "🟢 Online" if "error" not in executor else "🔴 Offline"
     paused = executor.get("paused", False)
     trading_state = "⏸ Paused" if paused else "▶️ Active"
+
+    wr_line = (
+        f"Track record: {wr['wins']}W / {wr['losses']}L ({wr['win_rate']:.0%}) | ${wr['total_pnl']:+.2f} P&L"
+        if wr["total_trades"] > 0 else "Track record: No closed trades yet"
+    )
 
     await update.message.reply_text(
         f"*Argus System Status*\n\n"
@@ -237,7 +244,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Executor: {executor_state}\n"
         f"Trading: {trading_state}\n"
         f"Trades this week: {executor.get('trades_this_week', stats['signals_executed'])}/{config.MAX_TRADES_PER_WEEK}\n"
-        f"Confidence threshold: {config.CONFIDENCE_THRESHOLD:.0%}\n"
+        f"Threshold: {config.CONFIDENCE_THRESHOLD:.0%} | Max positions: {config.MAX_OPEN_POSITIONS}\n"
+        f"{wr_line}\n"
         f"Mode: 📊 Paper Trading",
         parse_mode="Markdown"
     )
@@ -698,7 +706,12 @@ async def cmd_setups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _guest_rate_check(update):
         return
     signals = get_todays_signals(min_confidence=0.60)
-    await update.message.reply_text(guest_high_probability(signals), parse_mode="Markdown")
+    await update.message.reply_text(guest_high_probability(signals), parse_mode="MarkdownV2")
+
+
+async def cmd_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Full risk disclosure — open to everyone, never rate-limited."""
+    await update.message.reply_text(full_disclaimer(), parse_mode="MarkdownV2")
 
 
 # ── Guest handler ──────────────────────────────────────────────────────────────
@@ -921,6 +934,7 @@ def run_bot():
     app.add_handler(CommandHandler("social", cmd_social))
     app.add_handler(CommandHandler("wsb", cmd_wsb))
     app.add_handler(CommandHandler("testbroadcast", cmd_testbroadcast))
+    app.add_handler(CommandHandler("disclaimer", cmd_disclaimer))
 
     # Callbacks (owner + guest)
     app.add_handler(CallbackQueryHandler(callback_handler))

@@ -82,6 +82,23 @@ _SLOT_HEADERS = {
     "aftermarket": ("🌙", "NEXT DAY PREVIEW",       "What to watch for tomorrow's open"),
 }
 
+_RISK_DISCLOSURE = (
+    "⚠️ <b>RISK DISCLOSURE</b>\n"
+    "These are algorithmic signals for <b>educational purposes only</b>. "
+    "Argus is <b>NOT a licensed financial advisor</b>. Nothing here is financial advice. "
+    "You may lose money. Only trade capital you can afford to lose entirely. "
+    "Past signals do not guarantee future results. Always do your own research."
+)
+
+_HOW_TO_USE = (
+    "📋 <b>How to use these signals:</b>\n"
+    "1️⃣ Enter near the <b>Entry</b> price\n"
+    "2️⃣ Place a <b>stop-loss order</b> at the Stop price in your broker <b>immediately</b> — this is your protection\n"
+    "3️⃣ Set a take-profit at the <b>Target</b> price (optional — close manually when target approaches)\n"
+    "💰 <b>Size your position so the stop-loss costs no more than 1-2% of your total account</b>\n"
+    "   Example: $10,000 account → max $100-200 risk per trade"
+)
+
 
 def format_tier1_broadcast(
     stocks: list[dict],
@@ -103,6 +120,8 @@ def format_tier1_broadcast(
         f"{emoji} <b>ARGUS — {slot_title}</b>",
         f"<i>{today}  ·  {slot_sub}</i>",
         f"Market: <b>{market_regime.split(' — ')[0].upper()}</b>  |  <i>Data: {ts}</i>",
+        "",
+        _RISK_DISCLOSURE,
         "",
     ]
 
@@ -139,19 +158,14 @@ def format_tier1_broadcast(
         "─────────────────────────────",
         "📊 <b>What does the % mean?</b>",
         "",
-        "That's Argus's confidence score — calculated by our",
-        "three-committee AI framework (macro analysis, fundamentals,",
-        "and technical execution). A 74% means 3 independent models",
-        "ran this setup and agreed it has a real edge.",
-        "<b>We are not financial advisors. Do your own research.",
-        "These are our calculations — trade at your own risk.</b>",
+        "Argus's confidence score — pure technical analysis across RSI,",
+        "MACD, EMA, Bollinger Bands, volume, and social sentiment.",
+        "75%+ means multiple independent indicators aligned on one setup.",
+        "<b>Higher % = stronger technical agreement. Not a guarantee.</b>",
         "",
         "─────────────────────────────",
-        "🔒 <b>Today's #1 pick in each class + full",
-        "entry/stop/target levels are in Argus Pro.</b>",
-        "",
-        "Every day. Every asset class.",
-        "Same intelligence the institutions use.",
+        "🔒 <b>Pro members get the #1 pick in each class,",
+        "full entry/stop/target levels, and step-by-step execution playbook.</b>",
         "",
         "📩 <b>DM @ArgusVagabondBot to upgrade.</b>",
     ]
@@ -181,7 +195,8 @@ def format_tier2_broadcast(
     header = (
         f"{emoji} <b>ARGUS PRO — {slot_title}</b>\n"
         f"<i>{today}  ·  {slot_sub}</i>\n"
-        f"Regime: <b>{regime_tag}</b> | SPY: <b>{spy_change:+.2f}%</b> | <i>Data: {ts}</i>"
+        f"Regime: <b>{regime_tag}</b> | SPY: <b>{spy_change:+.2f}%</b> | <i>Data: {ts}</i>\n\n"
+        + _RISK_DISCLOSURE
     )
 
     sections = [
@@ -218,18 +233,24 @@ def format_tier2_broadcast(
 
                 execution_block = format_execution_tier2(s)
 
+                action_verb = "BUY" if action == "BUY" else "SELL/EXIT"
+                stop_dir    = "below" if action == "BUY" else "above"
                 lines += [
                     f"\n{_action_emoji(action)} <b>{name} — {action}</b>",
                     f"Confidence: <b>{conf:.0%}</b>  {_conf_bar(conf)}",
-                    f"Entry: <b>{price_fmt}</b> | Target: <b>{target_fmt}</b> | Suggested stop: <b>{stop_fmt}</b>",
-                    f"R/R: <b>{rr:.1f}x</b> | Hold: {horizon}",
-                    f"📝 <i>{reasoning}</i>",
-                    f"<i>⚠️ Entry, target, and stop are suggested levels — place your own orders in your brokerage at these prices.</i>",
+                    f"Entry: ~<b>{price_fmt}</b> | Target: <b>{target_fmt}</b> | Stop: <b>{stop_fmt}</b> | R/R: <b>{rr:.1f}x</b>",
+                    f"<b>Steps:</b> 1️⃣ {action_verb} near {price_fmt}  "
+                    f"2️⃣ Set stop-loss {stop_dir} <b>{stop_fmt}</b> immediately  "
+                    f"3️⃣ Take-profit at <b>{target_fmt}</b>",
+                    f"📝 <i>{reasoning[:180]}</i>",
                 ]
                 if execution_block:
                     lines.append(execution_block)
 
-        lines.append("\n<i>Not financial advice. Trade your own plan.</i>")
+        lines += [
+            "",
+            _HOW_TO_USE,
+        ]
         messages.append("\n".join(lines))
 
     return messages

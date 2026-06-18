@@ -277,6 +277,8 @@ def get_full_enrichment(ticker: str, use_finviz: bool = True) -> dict:
         **insider,
         **analyst,
         **finviz,
+        "insider_summary": insider.get("summary", ""),
+        "analyst_summary": analyst.get("summary", ""),
     }
 
     result["llm_context"] = _format_for_llm(ticker, result)
@@ -300,11 +302,11 @@ def _format_for_llm(ticker: str, data: dict) -> str:
             lines.append(f"Earnings in {days} days ({data.get('earnings_date', '?')}) — factor in pre-earnings drift.")
 
     # Analyst consensus
-    lines.append(data.get("summary", "") or "No analyst data.")
+    lines.append(data.get("analyst_summary", "") or "No analyst data.")
 
     # Insider activity
-    insider_summary = data.get("summary", "")
-    if insider_summary and "insider" in insider_summary.lower():
+    insider_summary = data.get("insider_summary", "")
+    if insider_summary:
         lines.append(insider_summary)
     bias = data.get("net_insider_bias", "neutral")
     if bias == "bullish":

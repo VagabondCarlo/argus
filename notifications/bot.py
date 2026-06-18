@@ -540,7 +540,7 @@ async def _guest_rate_check(update: Update) -> bool:
         return False
     blocked, msg = check_rate_limit(user_id)
     if blocked:
-        await update.message.reply_text(msg)
+        await update.message.reply_text(msg, parse_mode="HTML")
     return blocked
 
 
@@ -707,7 +707,7 @@ async def cmd_setups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _guest_rate_check(update):
         return
     signals = get_todays_signals(min_confidence=0.60)
-    await update.message.reply_text(guest_high_probability(signals), parse_mode="MarkdownV2")
+    await update.message.reply_text(guest_high_probability(signals), parse_mode="Markdown")
 
 
 async def cmd_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE):

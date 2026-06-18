@@ -15,7 +15,6 @@ from analyst.sentiment.analyzer import get_spy_context
 from analyst.signals.technical import score_snapshot
 from shared.database import save_signal, get_todays_signals, get_conn
 from shared.config import config
-from notifications.bot import send_sync_notification
 
 logger = logging.getLogger(__name__)
 
@@ -194,25 +193,9 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         if 0.70 <= s["confidence"] < config.CONFIDENCE_THRESHOLD
     ]
 
-    # Signals above 75% — notify immediately, executor polls and executes
-    if above_threshold:
-        lines = [f"🔵 *{len(above_threshold)} signal(s) above threshold*\n"]
-        for s in above_threshold:
-            rr = s.get("risk_reward", 0)
-            lines.append(
-                f"*{s['ticker']}* {s['action']} — {s['confidence']:.0%}\n"
-                f"Target: ${s['price_target']:.2f} | Stop: ${s['stop_loss']:.2f} | R/R: {rr:.1f}x\n"
-                f"_{s['reasoning'][:120]}_\n"
-            )
-        send_sync_notification("\n".join(lines))
-
-    # Signals at 70-75% — forward to executor for independent audit
+    # Signals at 70-75% — forward to executor for independent audit (no notification — logged only)
     for s in audit_candidates:
         logger.info(f"Forwarding {s['ticker']} ({s['confidence']:.0%}) to executor audit")
-        send_sync_notification(
-            f"🔎 *Sending to Risk Desk: {s['ticker']}*\n"
-            f"Analyst scored {s['confidence']:.0%} — executor auditing for final approval"
-        )
         try:
             httpx.post(
                 f"http://{config.EXECUTOR_HOST}:{config.EXECUTOR_PORT}/audit",
@@ -315,15 +298,5 @@ def run_extended_scan() -> list[dict]:
                 logger.error(f"Extended scan error for {ticker}: {e}")
 
     above_threshold = [s for s in new_signals if s["confidence"] >= config.CONFIDENCE_THRESHOLD]
-    if above_threshold:
-        lines = [f"🌐 *{len(above_threshold)} extended signal(s)*\n"]
-        for s in above_threshold:
-            lines.append(
-                f"*{s.get('display_name', s['ticker'])}* {s['action']} — {s['confidence']:.0%}\n"
-                f"Entry: {s['price']:.4f} | Target: {s['price_target']:.4f} | Stop: {s['stop_loss']:.4f}\n"
-                f"_{s['reasoning']}_\n"
-            )
-        send_sync_notification("\n".join(lines))
-
     logger.info(f"Extended scan done: {len(new_signals)} signals, {len(above_threshold)} above threshold")
     return new_signals

@@ -140,13 +140,9 @@ def process_pending_signals():
 
         audit = run_audit(signal, snapshot, account, weekly_trades, spy_change, market_regime)
 
-        send_sync_notification(
-            f"🔍 *Audit Complete: {signal['ticker']}*\n\n"
-            f"Analyst: {conf:.0%} → Executor: {audit['audit_confidence']:.0%}\n"
-            f"Verdict: {'✅ APPROVED' if audit['approved'] else '❌ VETOED'}\n"
-            f"Timing: {audit.get('timing_verdict','—')}\n"
-            f"Counter-thesis: _{audit.get('counter_thesis','—')}_\n"
-            f"Notes: _{audit.get('audit_notes','—')[:120]}_"
+        logger.info(
+            f"Audit {signal['ticker']}: {'APPROVED' if audit['approved'] else 'VETOED'} "
+            f"conf={audit.get('audit_confidence', 0):.0%} — {audit.get('veto_reason', 'ok')}"
         )
 
         if audit["approved"] and audit["audit_confidence"] >= config.CONFIDENCE_THRESHOLD:

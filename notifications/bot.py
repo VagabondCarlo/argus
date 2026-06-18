@@ -316,7 +316,13 @@ async def cmd_signals(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 status = "👁 Monitor only"
 
-            price_line = f"Target: ${target:.2f} | Stop: ${stop:.2f}" if target else ""
+            entry = s.get("entry_price") or 0
+            if entry and target and stop:
+                price_line = f"Entry: ${entry:.2f} | Target: ${target:.2f} | Stop: ${stop:.2f}"
+            elif target and stop:
+                price_line = f"Target: ${target:.2f} | Stop: ${stop:.2f}"
+            else:
+                price_line = ""
             lines.append(f"• *{ticker}* {action} — {conf:.0%} — {status}")
             if price_line:
                 lines.append(f"  {price_line}")

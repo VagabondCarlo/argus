@@ -190,6 +190,7 @@ def run_scan(full_universe: bool = False) -> list[dict]:
             stop_loss=signal.get("stop_loss", snapshot["price"] * 0.98),
             reasoning=signal.get("reasoning", ""),
             asset_type="stock",
+            entry_price=snapshot.get("price"),
         )
         new_signals.append(signal)
 
@@ -307,6 +308,7 @@ def run_extended_scan() -> list[dict]:
                             stop_loss=signal["stop_loss"],
                             reasoning=signal["reasoning"],
                             asset_type=signal["asset_type"],
+                            entry_price=snap.get("price"),
                         )
                         new_signals.append(signal)
                         logger.info(f"SIGNAL [{signal['asset_type'].upper()}]: {ticker} {action} | conf={confidence:.0%}")

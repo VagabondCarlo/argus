@@ -268,26 +268,45 @@ _BLOCKED_HOSTS = {
     "metadata.google.internal", # GCP metadata
     "169.254.170.2",            # ECS task metadata
 }
-# Regex catches hex/octal IP notation and IPv6-mapped IPv4 used to bypass string blocklist
+# Regex catches hex/octal IPs, IPv6-mapped loopback, and all RFC-1918 + Tailscale private ranges
 import re as _re
+import ipaddress as _ipaddress
 _BLOCKED_IP_RE = _re.compile(
-    r'^(0x[0-9a-f]+(\.[0-9a-f]+){0,3}|0\d+(\.\d+){0,3}|'  # hex/octal
+    r'^(0x[0-9a-f]+(\.[0-9a-f]+){0,3}|0\d+(\.\d+){0,3}|'  # hex/octal notation
     r'::ffff:127\.|::ffff:0:127\.|'                           # IPv6-mapped loopback
     r'::1|::ffff:169\.254\.)',                                # IPv6 loopback / link-local
     _re.IGNORECASE,
 )
+_PRIVATE_NETWORKS = [
+    _ipaddress.ip_network("10.0.0.0/8"),       # RFC-1918
+    _ipaddress.ip_network("172.16.0.0/12"),     # RFC-1918
+    _ipaddress.ip_network("192.168.0.0/16"),    # RFC-1918
+    _ipaddress.ip_network("100.64.0.0/10"),     # Tailscale / CGNAT
+    _ipaddress.ip_network("127.0.0.0/8"),       # loopback (belt-and-suspenders)
+    _ipaddress.ip_network("169.254.0.0/16"),    # link-local
+]
+
+
+def _is_private_ip(hostname: str) -> bool:
+    """Return True if hostname resolves to a private/internal IP range."""
+    try:
+        addr = _ipaddress.ip_address(hostname)
+        return any(addr in net for net in _PRIVATE_NETWORKS)
+    except ValueError:
+        return False
+
 
 def browse_url(url: str, question: str = "") -> str:
     """
     Browse any URL with headless Chromium and return the page text.
-    Blocked: localhost, internal IPs, non-http(s) schemes, hex/octal IPs (prevents SSRF).
+    Blocked: localhost, RFC-1918, Tailscale (100.64/10), link-local, non-http(s), hex/octal IPs.
     """
     from urllib.parse import urlparse
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
         return "URL not allowed: only http/https supported."
     hostname = (parsed.hostname or "").lower()
-    if hostname in _BLOCKED_HOSTS or _BLOCKED_IP_RE.match(hostname):
+    if hostname in _BLOCKED_HOSTS or _BLOCKED_IP_RE.match(hostname) or _is_private_ip(hostname):
         return "URL not allowed: internal addresses are blocked."
     content = _run(_fetch_page(url, timeout=20000))
     if not content:

@@ -9,9 +9,9 @@ _DISCLAIMER = (
 _STOP_INSTRUCTIONS = (
     "*How to use these signals:*\n"
     "1️⃣ Enter near the Entry price\n"
-    "2️⃣ Place a stop\\-loss order at the Stop price in your broker immediately\n"
-    "3️⃣ Set a take\\-profit at the Target price\n"
-    "💰 Risk no more than 1\\-2% of your account per trade"
+    "2️⃣ Place a stop-loss order at the Stop price in your broker immediately\n"
+    "3️⃣ Set a take-profit at the Target price\n"
+    "💰 Risk no more than 1-2% of your account per trade"
 )
 
 
@@ -180,19 +180,19 @@ def guest_suggestions(signals) -> str:
 def guest_high_probability(signals) -> str:
     high = [s for s in signals if s["confidence"] >= 0.65]
     if not high:
-        return "🔥 *High Probability Setups*\n\nNo high\\-probability setups identified yet today."
+        return "🔥 *High Probability Setups*\n\nNo high-probability setups identified yet today."
 
     wr = get_win_rate()
     lines = ["🔥 *High Probability Setups*\n"]
     lines.append(
-        f"Argus identified {len(high)} setup\\(s\\) today with ≥65% confidence\\. "
-        f"Trades execute automatically at ≥75%\\.\n"
+        f"Argus identified {len(high)} setup(s) today with 65%+ confidence. "
+        f"Trades execute automatically at 75%+.\n"
     )
 
     if wr["total_trades"] > 0:
         lines.append(
             f"📊 *Track record:* {wr['wins']}W / {wr['losses']}L "
-            f"\\({wr['win_rate']:.0%} win rate\\)\n"
+            f"({wr['win_rate']:.0%} win rate)\n"
         )
 
     for s in high:

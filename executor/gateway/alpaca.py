@@ -4,10 +4,8 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestQuoteRequest
 from shared.config import config
-from shared.database import get_conn
 import logging
 import time
-from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -124,21 +122,10 @@ def close_position(ticker: str) -> dict:
         return {"error": str(e)}
 
 
-def close_all_positions() -> list:
+def close_all_positions() -> dict:
     try:
         _get_trading().close_all_positions(cancel_orders=True)
         return {"closed": "all"}
     except Exception as e:
         logger.error(f"Failed to close all positions: {e}")
         return {"error": str(e)}
-
-
-def trades_this_week() -> int:
-    today = date.today()
-    monday = today - timedelta(days=today.weekday())
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM trades WHERE date(executed_at) >= ?",
-            (monday.isoformat(),)
-        ).fetchone()
-    return row["cnt"] if row else 0

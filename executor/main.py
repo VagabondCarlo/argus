@@ -301,9 +301,13 @@ def audit_signal(body: AuditRequest):
         daily_pnl = account.get("pnl_today", 0.0)
         allowed, reason = check_trade_allowed(account.get("cash", 0), unrealized_pnl=unrealized_pnl, daily_pnl=daily_pnl)
         if allowed:
-            signal["confidence"] = result["audit_confidence"]
-            execute_signal(signal, account)
-            result["executed"] = True
+            if signal.get("action") == "BUY" and len(open_positions) >= config.MAX_OPEN_POSITIONS:
+                result["executed"] = False
+                result["veto_reason"] = f"Position limit: {len(open_positions)}/{config.MAX_OPEN_POSITIONS} open"
+            else:
+                signal["confidence"] = result["audit_confidence"]
+                execute_signal(signal, account)
+                result["executed"] = True
         else:
             result["executed"] = False
             result["veto_reason"] = reason

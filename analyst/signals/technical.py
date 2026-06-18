@@ -10,13 +10,25 @@ def score_snapshot(snap: dict) -> dict:
     Score a market snapshot using technical indicators only.
     Returns a signal dict with the same shape expected by save_signal() and the broadcaster.
     """
+    price = snap.get("price", 0)
+    if not price or price <= 0:
+        return {
+            "ticker": snap.get("ticker", ""),
+            "display_name": snap.get("display_name", snap.get("ticker", "")),
+            "asset_type": snap.get("asset_type", "stock"),
+            "action": "WATCH", "confidence": 0.0, "price": 0,
+            "price_target": 0, "stop_loss": 0, "risk_reward": 0,
+            "setup_type": "invalid", "time_horizon": "—",
+            "reasoning": "No valid price data.", "red_flags": "zero price",
+            "spy_change": snap.get("spy_change", 0.0),
+        }
+
     rsi   = snap.get("rsi", 50)
     ema   = snap.get("ema_trend", "neutral")
     macd  = snap.get("macd_cross", "neutral")
     bb    = snap.get("bb_pct", 0.5)
     vol   = snap.get("volume_ratio", 1.0)
     chg   = snap.get("price_change_pct", 0.0)
-    price = snap.get("price", 0)
     asset = snap.get("asset_type", "stock")
 
     buy_score = 0.0

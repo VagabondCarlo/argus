@@ -271,14 +271,57 @@ async def cmd_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def cmd_signals(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    signals = get_todays_signals(min_confidence=0.60)
-    if not signals:
+    raw = get_todays_signals(min_confidence=0.60)
+    if not raw:
         await update.message.reply_text("No signals generated yet today.")
         return
+
+    # Deduplicate: keep highest-confidence signal per ticker+action combo
+    seen: dict[tuple, dict] = {}
+    for s in raw:
+        key = (s["ticker"], s["action"])
+        if key not in seen or s["confidence"] > seen[key]["confidence"]:
+            seen[key] = s
+    signals = sorted(seen.values(), key=lambda x: -x["confidence"])
+
+    sections = {
+        "stock":  ("📈", "STOCKS"),
+        "forex":  ("💱", "FOREX"),
+        "metal":  ("🥇", "METALS"),
+        "crypto": ("🪙", "CRYPTO"),
+    }
+
     lines = ["*Today's Signals*\n"]
-    for s in signals:
-        tag = "✅ Executed" if s["executed"] else ("🟡 Watching" if s["confidence"] < 0.75 else "🔵 Queued")
-        lines.append(f"• {s['ticker']} {s['action']} — {s['confidence']:.0%} — {tag}")
+    for asset_type, (emoji, label) in sections.items():
+        group = [s for s in signals if s.get("asset_type") == asset_type]
+        if not group:
+            continue
+        lines.append(f"{emoji} *{label}*")
+        for s in group:
+            ticker   = s["ticker"]
+            action   = s["action"]
+            conf     = s["confidence"]
+            target   = s.get("price_target", 0)
+            stop     = s.get("stop_loss", 0)
+            executed = s["executed"]
+
+            if executed:
+                status = "✅ Executed"
+            elif conf >= 0.75:
+                status = "🔵 Queued — above threshold"
+            elif action == "BUY":
+                status = "👀 Watching to BUY"
+            elif action == "SELL":
+                status = "👀 Watching to SELL / Short"
+            else:
+                status = "👁 Monitor only"
+
+            price_line = f"Target: ${target:.2f} | Stop: ${stop:.2f}" if target else ""
+            lines.append(f"• *{ticker}* {action} — {conf:.0%} — {status}")
+            if price_line:
+                lines.append(f"  {price_line}")
+        lines.append("")
+
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 

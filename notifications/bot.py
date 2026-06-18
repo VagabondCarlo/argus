@@ -178,11 +178,23 @@ async def job_broadcast(context: ContextTypes.DEFAULT_TYPE):
 
 # ── Owner commands ─────────────────────────────────────────────────────────────
 
-@owner_only
+_AUTO_DISCLAIMER = (
+    "⚠️ *Before you use Argus — read this.*\n\n"
+    "This is NOT professional or legal financial advice\\.\n"
+    "This is an AI giving you a *chance* — a signal, a possibility to consider\\.\n\n"
+    "You make your own decisions\\. You take your own risk\\.\n"
+    "You could lose money\\. Only trade what you can afford to lose entirely\\.\n\n"
+    "*This is a tool, not a guarantee\\.*"
+)
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     owner = is_owner(update)
-    if owner:
-        msg = (
+    if not owner:
+        await update.message.reply_text(_AUTO_DISCLAIMER, parse_mode="MarkdownV2")
+        await update.message.reply_text(guest_welcome(), parse_mode="Markdown")
+        return
+    msg = (
             "👁 *Argus is online.*\n\n"
             "*📊 Monitoring*\n"
             "/status — system health & account\n"
@@ -206,17 +218,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/addpaid [key] [user\\_id] — add paid member\n"
             "/removepaid [key] [user\\_id] — remove paid member\n"
             "/members [key] — list paid members\n"
-        )
-    else:
-        msg = (
-            "👁 *Argus — Market Intelligence*\n\n"
-            "Real-time signals across stocks, forex, metals & crypto.\n\n"
-            "/predictions — today's top setups\n"
-            "/suggestions — what to watch\n"
-            "/setups — high-probability plays\n"
-            "/news — market headlines\n"
-            "/upgrade — go Pro for full analysis\n\n"
-            "_Ask me anything about the market._"
         )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -721,7 +722,10 @@ async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = (update.message.text or "").strip()
     user_id   = update.effective_user.id
 
-    # Command-style or empty — show welcome (never counts against rate limit)
+    # Always push disclaimer first — before any response, every time
+    await update.message.reply_text(_AUTO_DISCLAIMER, parse_mode="MarkdownV2")
+
+    # Command-style or empty — show welcome after disclaimer
     if not user_text or user_text.startswith("/"):
         await update.message.reply_text(guest_welcome(), parse_mode="Markdown")
         return

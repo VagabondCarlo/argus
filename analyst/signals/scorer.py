@@ -46,6 +46,20 @@ def recently_analyzed(ticker: str, hours: int = 4) -> bool:
     return row is not None
 
 
+def same_signal_exists(ticker: str, action: str, hours: int = 8) -> bool:
+    """True if this ticker already has a same-direction signal saved within N hours.
+    Prevents saving 10 copies of 'BNB SELL' across overnight scan cycles.
+    A direction flip (SELL→BUY) always saves — that's a real change worth recording.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM signals WHERE ticker=? AND action=? AND generated_at>=?",
+            (ticker, action, cutoff)
+        ).fetchone()
+    return row is not None
+
+
 def get_weekly_signal_count() -> int:
     """How many signals have we already committed to this week (ET week boundary)."""
     today = datetime.now(_ET).date()
@@ -282,17 +296,27 @@ def run_extended_scan() -> list[dict]:
 
                 # Minimum floor: 0.62 for all signal types — cuts pure noise
                 if confidence >= 0.62:
-                    save_signal(
-                        ticker=ticker,
-                        action=action,
-                        confidence=confidence,
-                        price_target=signal["price_target"],
-                        stop_loss=signal["stop_loss"],
-                        reasoning=signal["reasoning"],
-                        asset_type=signal["asset_type"],
-                    )
-                    new_signals.append(signal)
-                    logger.info(f"SIGNAL [{signal['asset_type'].upper()}]: {ticker} {action} | conf={confidence:.0%}")
+                    if same_signal_exists(ticker, action, hours=8):
+                        logger.debug(f"Skip duplicate: {ticker} {action} already saved within 8h")
+                    else:
+                        save_signal(
+                            ticker=ticker,
+                            action=action,
+                            confidence=confidence,
+                            price_target=signal["price_target"],
+                            stop_loss=signal["stop_loss"],
+                            reasoning=signal["reasoning"],
+                            asset_type=signal["asset_type"],
+                        )
+                        new_signals.append(signal)
+                        logger.info(f"SIGNAL [{signal['asset_type'].upper()}]: {ticker} {action} | conf={confidence:.0%}")
+                else:
+                    with get_conn() as conn:
+                        conn.execute("""
+                            INSERT INTO daily_stats (trade_date, signals_rejected)
+                            VALUES (?, 1)
+                            ON CONFLICT(trade_date) DO UPDATE SET signals_rejected = signals_rejected + 1
+                        """, (trade_date,))
 
             except Exception as e:
                 logger.error(f"Extended scan error for {ticker}: {e}")

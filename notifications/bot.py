@@ -187,6 +187,18 @@ _AUTO_DISCLAIMER = (
     "*This is a tool, not a guarantee\\.*"
 )
 
+# In-process cache: user_id → date string of last disclaimer shown
+# Resets on bot restart, which is fine — legal protection re-shows at most once per restart.
+_DISCLAIMER_SHOWN: dict[int, str] = {}
+
+
+def _should_show_disclaimer(user_id: int) -> bool:
+    today = datetime.now(ET).date().isoformat()
+    if _DISCLAIMER_SHOWN.get(user_id) == today:
+        return False
+    _DISCLAIMER_SHOWN[user_id] = today
+    return True
+
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     owner = is_owner(update)
@@ -270,6 +282,36 @@ async def cmd_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @owner_only
+async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/positions — live open positions with per-position P&L from Alpaca."""
+    from executor.gateway.alpaca import get_open_positions
+    positions = get_open_positions()
+    if not positions:
+        await update.message.reply_text("No open positions.")
+        return
+    lines = ["*Open Positions*\n"]
+    total_unrealized = 0.0
+    for p in positions:
+        ticker  = p["ticker"]
+        qty     = p["qty"]
+        entry   = p["avg_entry"]
+        current = p["current_price"]
+        pnl     = p["unrealized_pnl"]
+        pct     = (current - entry) / entry * 100 if entry else 0
+        sign    = "+" if pnl >= 0 else ""
+        arrow   = "📈" if pnl >= 0 else "📉"
+        lines.append(
+            f"{arrow} *{ticker}* — {qty:.4f} shares\n"
+            f"  Entry: ${entry:.2f} → Now: ${current:.2f} ({sign}{pct:.2f}%)\n"
+            f"  Unrealized P&L: *{sign}${pnl:.2f}*"
+        )
+        total_unrealized += pnl
+    sign = "+" if total_unrealized >= 0 else ""
+    lines.append(f"\nTotal unrealized: *{sign}${total_unrealized:.2f}*")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+@owner_only
 async def cmd_signals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = get_todays_signals(min_confidence=0.60)
     if not raw:
@@ -312,7 +354,7 @@ async def cmd_signals(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif action == "BUY":
                 status = "👀 Watching to BUY"
             elif action == "SELL":
-                status = "👀 Watching to SELL / Short"
+                status = "👀 Watching to SELL — close position"
             else:
                 status = "👁 Monitor only"
 
@@ -491,6 +533,24 @@ async def cmd_addpaid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     note = " ".join(value_args[1:])
     add_paid_user(user_id, note=note)
     await update.message.reply_text(f"✅ User `{user_id}` added to paid tier.\n_{note}_", parse_mode="Markdown")
+    # Send welcome DM to the new member
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "Welcome to *Argus Pro*.\n\n"
+                "You now have unlimited access to the AI trading desk.\n\n"
+                "What you get:\n"
+                "— Real-time market analysis on demand\n"
+                "— Priority signal access in the Tier 2 channel\n"
+                "— Unlimited /research, /social, and /setups\n"
+                "— Direct AI chat with full market context\n\n"
+                "Start by asking me anything. I'm running 24/7."
+            ),
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass  # User may not have started the bot yet — that's OK
 
 
 @owner_only
@@ -768,11 +828,23 @@ async def cmd_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def guest_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles all messages from non-owner users — guest experience."""
+    import os as _os
     user_text = (update.message.text or "").strip()
     user_id   = update.effective_user.id
 
-    # Always push disclaimer first — before any response, every time
-    await update.message.reply_text(_AUTO_DISCLAIMER, parse_mode="MarkdownV2")
+    # Maintenance mode — block all non-owner access
+    if _os.path.exists(_os.path.join(_os.path.dirname(__file__), "..", "maintenance.flag")):
+        await update.message.reply_text(
+            "🔧 *Argus is down for maintenance and growth.*\n\n"
+            "We look forward to trading with you *next Monday*.\n\n"
+            "Stay sharp. — The Argus Team",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Show disclaimer once per user per day — not on every message
+    if _should_show_disclaimer(user_id):
+        await update.message.reply_text(_AUTO_DISCLAIMER, parse_mode="MarkdownV2")
 
     # Command-style or empty — show welcome after disclaimer
     if not user_text or user_text.startswith("/"):
@@ -965,6 +1037,7 @@ def run_bot():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("account", cmd_account))
+    app.add_handler(CommandHandler("positions", cmd_positions))
     app.add_handler(CommandHandler("signals", cmd_signals))
     app.add_handler(CommandHandler("report", cmd_report))
     app.add_handler(CommandHandler("history", cmd_history))

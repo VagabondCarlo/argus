@@ -197,6 +197,10 @@ def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, mark
             logger.warning(f"Missing fields in LLM response for {snapshot['ticker']}")
             return None
 
+        # llama3.1:8b sometimes returns reasoning as a list — join it
+        if isinstance(signal.get("reasoning"), list):
+            signal["reasoning"] = " ".join(str(s) for s in signal["reasoning"])
+
         # Enforce risk/reward check — don't trust the model alone
         price = snapshot["price"]
         action = signal["action"]

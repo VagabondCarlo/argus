@@ -3,9 +3,12 @@ import json
 import logging
 import re
 
+from shared.config import config
+
 logger = logging.getLogger(__name__)
 
 MODEL = "llama3.1:8b"
+_OLLAMA_HOST = config.OLLAMA_HOST
 
 SYSTEM_PROMPT = """You are Marcus Reed — a 20-year institutional trading veteran running an AI-powered
 analysis desk. Before every trade decision, you run it through a three-committee framework
@@ -171,13 +174,14 @@ def analyze_ticker(snapshot: dict, news_text: str, spy_change: float = 0.0, mark
     )
 
     try:
-        response = ollama.chat(
+        client = ollama.Client(host=_OLLAMA_HOST)
+        response = client.chat(
             model=MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            options={"temperature": 0.05}  # Near-deterministic — veterans don't guess
+            options={"temperature": 0.05}
         )
         raw = response["message"]["content"].strip()
 

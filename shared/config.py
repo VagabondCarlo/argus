@@ -49,6 +49,9 @@ class Config:
     EXECUTOR_HOST = os.getenv("EXECUTOR_HOST", "localhost")
     EXECUTOR_PORT = int(os.getenv("EXECUTOR_PORT", "8002"))
 
+    # LLM backend (Agent 2 Ollama over Tailscale)
+    OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
 
 config = Config()
 

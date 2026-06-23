@@ -11,7 +11,8 @@ from analyst.data.screener import run_prescreen, filter_by_market_regime
 from analyst.data.market import get_market_snapshot
 from analyst.data.multi_asset import get_extended_snapshot
 from analyst.data.social_aggregator import get_all_social_tickers
-from analyst.sentiment.analyzer import get_spy_context
+from analyst.data.news import fetch_news, format_news_for_prompt
+from analyst.sentiment.analyzer import get_spy_context, analyze_ticker
 from analyst.signals.technical import score_snapshot
 from shared.database import save_signal, get_todays_signals, get_conn
 from shared.config import config
@@ -137,7 +138,8 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         logger.warning(f"Social scan failed, continuing without it: {e}")
         social_map = {}
 
-    # Step 5b: Score each snapshot, apply social modifier
+    # Step 5b: Score each snapshot, apply social modifier — buffer results before saving
+    buffered: list[tuple[dict, dict]] = []  # (signal, snapshot)
     for ticker, snapshot in snapshots.items():
         signal = score_snapshot(snapshot)
 
@@ -159,7 +161,6 @@ def run_scan(full_universe: bool = False) -> list[dict]:
                 signal["reasoning"] += f" ⚠️ Social headwind: {sent} sentiment on {', '.join(social['platforms'])}."
             signal["confidence"] = round(confidence, 2)
 
-        # Update signals analyzed count
         with get_conn() as conn:
             conn.execute("""
                 INSERT INTO daily_stats (trade_date, signals_analyzed)
@@ -167,7 +168,6 @@ def run_scan(full_universe: bool = False) -> list[dict]:
                 ON CONFLICT(trade_date) DO UPDATE SET signals_analyzed = signals_analyzed + 1
             """, (trade_date,))
 
-        # Minimum floors: WATCH needs conf ≥ 0.62; BUY/SELL need conf ≥ 0.60 and R/R ≥ 1.2
         below_floor = (
             (action == "WATCH" and confidence < 0.62) or
             (action in ("BUY", "SELL") and (confidence < 0.60 or risk_reward < 1.2))
@@ -182,6 +182,55 @@ def run_scan(full_universe: bool = False) -> list[dict]:
                 """, (trade_date,))
             continue
 
+        buffered.append((signal, snapshot))
+
+    # Step 5c: LLM three-committee second pass on top 5 BUY/SELL candidates
+    actionable = sorted(
+        [(s, snap) for s, snap in buffered if s["action"] in ("BUY", "SELL")],
+        key=lambda x: x[0]["confidence"],
+        reverse=True,
+    )
+    llm_reviewed: set[str] = set()
+    for signal, snapshot in actionable[:5]:
+        ticker = signal["ticker"]
+        try:
+            articles = fetch_news(ticker)
+            news_text = format_news_for_prompt(articles)
+            enriched = analyze_ticker(
+                snapshot=snapshot,
+                news_text=news_text,
+                spy_change=spy_change,
+                market_regime=market_regime,
+            )
+            if enriched and enriched.get("action") in ("BUY", "SELL", "WATCH"):
+                for key in ("action", "confidence", "price_target", "stop_loss",
+                            "risk_reward", "reasoning", "red_flags", "setup_type"):
+                    if key in enriched:
+                        signal[key] = enriched[key]
+                llm_reviewed.add(ticker)
+                logger.info(
+                    f"LLM enriched {ticker}: {enriched['action']} "
+                    f"conf={enriched['confidence']:.0%} rr={enriched.get('risk_reward', 0):.1f}"
+                )
+        except Exception as e:
+            logger.warning(f"LLM enrichment failed for {ticker}: {e}")
+
+    # Save all buffered signals
+    for signal, snapshot in buffered:
+        ticker = signal["ticker"]
+        action = signal.get("action", "WATCH")
+        confidence = signal.get("confidence", 0.0)
+        risk_reward = signal.get("risk_reward", 0.0)
+
+        # Re-check floors after LLM may have changed confidence or action
+        below_floor = (
+            (action == "WATCH" and confidence < 0.62) or
+            (action in ("BUY", "SELL") and (confidence < 0.60 or risk_reward < 1.2))
+        )
+        if below_floor:
+            logger.info(f"POST-LLM PASS: {ticker} | {action} | conf={confidence:.0%} | R/R={risk_reward:.1f}")
+            continue
+
         save_signal(
             ticker=ticker,
             action=action,
@@ -193,9 +242,9 @@ def run_scan(full_universe: bool = False) -> list[dict]:
             entry_price=snapshot.get("price"),
         )
         new_signals.append(signal)
-
+        source = "LLM+tech" if ticker in llm_reviewed else "tech"
         logger.info(
-            f"SIGNAL: {ticker} {action} | conf={confidence:.0%} | "
+            f"SIGNAL [{source}]: {ticker} {action} | conf={confidence:.0%} | "
             f"R/R={risk_reward:.1f} | {signal.get('setup_type','')}"
         )
 

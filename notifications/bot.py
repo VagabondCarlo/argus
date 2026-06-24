@@ -236,30 +236,74 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import subprocess, shutil
+
     analyst = await _get_analyst_status()
     executor = await _get_executor_status()
     stats = get_todays_stats()
     wr = get_win_rate()
 
-    analyst_state = "🟢 Online" if "error" not in analyst else "🔴 Offline"
-    executor_state = "🟢 Online" if "error" not in executor else "🔴 Offline"
+    analyst_state = "🟢" if "error" not in analyst else "🔴"
+    executor_state = "🟢" if "error" not in executor else "🔴"
+    bot_state = "🟢"
     paused = executor.get("paused", False)
     trading_state = "⏸ Paused" if paused else "▶️ Active"
 
     wr_line = (
-        f"Track record: {wr['wins']}W / {wr['losses']}L ({wr['win_rate']:.0%}) | ${wr['total_pnl']:+.2f} P&L"
-        if wr["total_trades"] > 0 else "Track record: No closed trades yet"
+        f"{wr['wins']}W / {wr['losses']}L ({wr['win_rate']:.0%}) | ${wr['total_pnl']:+.2f}"
+        if wr["total_trades"] > 0 else "No closed trades yet"
     )
 
+    # Agent 2 Ollama check
+    try:
+        r = httpx.get(f"http://{config.OLLAMA_HOST.replace('http://', '')}/api/tags", timeout=3)
+        ollama_state = "🟢"
+    except Exception:
+        ollama_state = "🔴"
+
+    # Agent 2 SSH check
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=3", "agent2", "echo", "ok"],
+            capture_output=True, text=True, timeout=5
+        )
+        a2_state = "🟢 Online" if result.returncode == 0 else "🔴 Offline"
+    except Exception:
+        a2_state = "🔴 Offline"
+
+    # Tailscale
+    try:
+        result = subprocess.run(
+            [shutil.which("tailscale") or "/opt/homebrew/bin/tailscale", "ip"],
+            capture_output=True, text=True, timeout=3
+        )
+        ts_ip = result.stdout.strip().split("\n")[0] if result.returncode == 0 else "Down"
+    except Exception:
+        ts_ip = "Down"
+
+    now = datetime.now(ET)
+    market = "Open" if now.weekday() < 5 and now.replace(hour=9, minute=30) <= now <= now.replace(hour=16) else "Closed"
+
     await update.message.reply_text(
-        f"*Argus System Status*\n\n"
-        f"Analyst: {analyst_state}\n"
-        f"Executor: {executor_state}\n"
-        f"Trading: {trading_state}\n"
+        f"*ARGUS COMMAND — STATUS*\n\n"
+        f"*Services*\n"
+        f"{analyst_state} Analyst\n"
+        f"{executor_state} Executor\n"
+        f"{bot_state} Telegram Bot\n"
+        f"{ollama_state} Ollama LLM (Agent 2)\n\n"
+        f"*Trading* — Market {market}\n"
+        f"Mode: {trading_state}\n"
         f"Trades this week: {executor.get('trades_this_week', stats['signals_executed'])}/{config.MAX_TRADES_PER_WEEK}\n"
-        f"Threshold: {config.CONFIDENCE_THRESHOLD:.0%} | Max positions: {config.MAX_OPEN_POSITIONS}\n"
-        f"{wr_line}\n"
-        f"Mode: 📊 Paper Trading",
+        f"Threshold: {config.CONFIDENCE_THRESHOLD:.0%}\n"
+        f"Record: {wr_line}\n\n"
+        f"*Network*\n"
+        f"Agent 1: 🟢 {ts_ip}\n"
+        f"Agent 2: {a2_state}\n\n"
+        f"*Agents*\n"
+        f"Agent 1 — Mac Mini M4 — Argus\n"
+        f"Agent 2 — Mac Mini M4 — Ollama / Phantom\n"
+        f"MacBook Pro — Command\n"
+        f"iPhone — Mobile",
         parse_mode="Markdown"
     )
 

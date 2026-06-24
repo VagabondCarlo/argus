@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 _ET = ZoneInfo("America/New_York")
 
-from analyst.data.universe import get_core_universe, get_full_universe
+from analyst.data.universe import get_core_universe, get_full_universe, get_scalp_universe
 from analyst.data.universe_extended import FOREX_PAIRS, METALS_PAIRS, CRYPTO_PAIRS
 from analyst.data.screener import run_prescreen, filter_by_market_regime
 from analyst.data.market import get_market_snapshot
@@ -91,9 +91,16 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         logger.info(f"Weekly trade limit reached ({weekly_count}). No new signals needed.")
         return []
 
-    # Step 1: Universe — skip tickers scored in the last 4 hours
-    tickers = get_full_universe() if full_universe else get_core_universe()
-    tickers = [t for t in tickers if not recently_analyzed(t, hours=4)]
+    # Step 1: Universe — scalp mode uses tight liquid list, rescans every cycle
+    if full_universe:
+        tickers = get_full_universe()
+        tickers = [t for t in tickers if not recently_analyzed(t, hours=4)]
+    elif is_market_hours():
+        tickers = get_scalp_universe()
+        tickers = [t for t in tickers if not recently_analyzed(t, hours=1)]
+    else:
+        tickers = get_core_universe()
+        tickers = [t for t in tickers if not recently_analyzed(t, hours=4)]
 
     if not tickers:
         logger.info("All tickers already analyzed today.")

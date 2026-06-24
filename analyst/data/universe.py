@@ -48,12 +48,24 @@ def get_full_universe() -> list[str]:
     return all_tickers
 
 
+def get_scalp_universe() -> list[str]:
+    """
+    Tight list of the most liquid names for scalping.
+    High volume, tight spreads, fast fills. Nothing that trades sideways.
+    """
+    return [
+        "SPY", "QQQ", "AAPL", "TSLA", "NVDA", "AMD", "META",
+        "AMZN", "GOOGL", "MSFT", "NFLX", "AVGO", "CRM",
+        "COIN", "PLTR", "HOOD", "SMCI", "ARM",
+        "SOXL", "TQQQ",
+    ]
+
+
 def get_core_universe() -> list[str]:
     """
     Smaller universe for faster scans: top 300 most liquid S&P names + extras.
     Used during regular scan cycles. Full universe used pre-market.
     """
-    # These 300 represent ~85% of total S&P market cap and volume
     core = [
         "AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","BRK-B","AVGO","JPM",
         "LLY","UNH","XOM","V","MA","COST","HD","MRK","ABBV","CVX","PEP","KO",

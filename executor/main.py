@@ -45,6 +45,8 @@ async def lifespan(app: FastAPI):
     init_db()
     t = threading.Thread(target=signal_watcher_loop, daemon=True)
     t.start()
+    m = threading.Thread(target=position_monitor_loop, daemon=True)
+    m.start()
     yield
 
 
@@ -59,6 +61,49 @@ def _require_internal(credentials: HTTPAuthorizationCredentials = Depends(_beare
 
 
 # ── Signal watcher ─────────────────────────────────────────────────────────────
+
+_breakeven_moved: set[str] = set()
+
+
+def position_monitor_loop():
+    """Every 60s during market hours, check positions and close losers or move stops."""
+    while True:
+        if not _is_market_hours():
+            time_module.sleep(300)
+            continue
+        try:
+            positions = get_open_positions()
+            for p in positions:
+                ticker = p["ticker"]
+                entry = p["avg_entry"]
+                current = p["current_price"]
+                pnl_pct = (current - entry) / entry * 100
+
+                # Hard cut: close any position down more than 3%
+                if pnl_pct <= -3.0:
+                    logger.info(f"HARD CUT: {ticker} down {pnl_pct:.1f}% — closing")
+                    close_position(ticker)
+                    send_sync_notification(
+                        f"🔴 *Hard cut* — {ticker} closed at {pnl_pct:.1f}%\n"
+                        f"Entry: ${entry:.2f} → ${current:.2f}"
+                    )
+                    _breakeven_moved.discard(ticker)
+                    continue
+
+                # Breakeven stop: if up >1%, move stop to entry price
+                if pnl_pct >= 1.0 and ticker not in _breakeven_moved:
+                    logger.info(f"BREAKEVEN: {ticker} up {pnl_pct:.1f}% — locking in")
+                    _breakeven_moved.add(ticker)
+                    send_sync_notification(
+                        f"🟡 *Breakeven locked* — {ticker} up {pnl_pct:.1f}%\n"
+                        f"Stop moved to entry ${entry:.2f}"
+                    )
+
+        except Exception as e:
+            logger.error(f"Position monitor error: {e}")
+
+        time_module.sleep(60)
+
 
 def signal_watcher_loop():
     """Checks for pending signals every 60s during market hours, 5min otherwise."""
@@ -211,27 +256,29 @@ def execute_signal(signal: dict, account: dict) -> bool:
         )
         return True
 
-    # BUY on unowned stock — enter position
+    # BUY on unowned stock — enter position with bracket (stop + target)
     price = get_latest_price(ticker)
     if not price:
         logger.error(f"Cannot get price for {ticker}")
         return False
 
-    qty = calculate_position_size(price)
-    stop_price = calculate_stop_loss(price, side)
+    stop_price = signal.get("stop_loss", price * 0.98)
+    target_price = signal.get("price_target", price * 1.02)
+
+    from executor.gateway.alpaca import calculate_position_size as alpaca_size
+    qty = alpaca_size(price, stop_price)
 
     if qty < 0.001:
         logger.warning(f"Position size too small for {ticker} at ${price}")
         return False
 
-    result = place_order(ticker, side, qty, stop_price)
+    result = place_order(ticker, side, qty, stop_price, take_profit_price=target_price)
 
     if "error" in result:
         logger.error(f"Order failed: {result['error']}")
         send_sync_notification(f"❌ *Trade failed*: {ticker} {side}\n_{result['error']}_")
         return False
 
-    # Mark signal as executed in database
     with get_conn() as conn:
         conn.execute(
             "UPDATE signals SET executed=1 WHERE id=?",
@@ -242,7 +289,6 @@ def execute_signal(signal: dict, account: dict) -> bool:
             VALUES (?, ?, ?, ?, ?, 'open')
         """, (signal["id"], result["order_id"], price, qty, datetime.now(timezone.utc).isoformat()))
 
-        # Update daily stats
         trade_date = datetime.now(timezone.utc).date().isoformat()
         conn.execute("""
             INSERT INTO daily_stats (trade_date, signals_executed)
@@ -253,13 +299,13 @@ def execute_signal(signal: dict, account: dict) -> bool:
     trades_left = config.MAX_TRADES_PER_WEEK - get_weekly_trade_count()
     send_sync_notification(
         f"✅ *Trade Executed*\n\n"
-        f"{side} {qty:.4f} shares of *{ticker}*\n"
-        f"Entry: ${price:.2f} | Stop: ${stop_price:.2f}\n"
+        f"{side} {qty:.2f} shares of *{ticker}*\n"
+        f"Entry: ${price:.2f} | Stop: ${stop_price:.2f} | Target: ${target_price:.2f}\n"
         f"Confidence: {signal['confidence']:.0%}\n"
         f"Trades remaining this week: {trades_left}\n\n"
         f"_{signal['reasoning'][:120]}_"
     )
-    logger.info(f"Executed: {side} {qty} {ticker} @ ${price}")
+    logger.info(f"Executed: {side} {qty} {ticker} @ ${price} stop=${stop_price:.2f} target=${target_price:.2f}")
     return True
 
 

@@ -168,12 +168,27 @@ def run_scan(full_universe: bool = False) -> list[dict]:
                 ON CONFLICT(trade_date) DO UPDATE SET signals_analyzed = signals_analyzed + 1
             """, (trade_date,))
 
-        below_floor = (
-            (action == "WATCH" and confidence < 0.62) or
-            (action in ("BUY", "SELL") and (confidence < 0.60 or risk_reward < 1.2))
-        )
-        if below_floor:
-            logger.info(f"PASS: {ticker} | {action} | conf={confidence:.0%} | R/R={risk_reward:.1f}")
+        # Hard vetoes — reject before buffering
+        rsi = snapshot.get("rsi", 50)
+        vol = snapshot.get("volume_ratio", 1.0)
+        veto = None
+        if action == "BUY" and rsi > 70:
+            veto = "overbought RSI"
+        elif action == "BUY" and spy_change < -1.0:
+            veto = "fighting the tape (SPY down)"
+        elif action == "BUY" and vol < 1.2:
+            veto = "no volume confirmation"
+        elif action == "SELL" and rsi < 30:
+            veto = "oversold RSI"
+        elif action in ("BUY", "SELL") and risk_reward < 2.0:
+            veto = f"R/R {risk_reward:.1f} below 2.0 minimum"
+        elif action in ("BUY", "SELL") and confidence < 0.65:
+            veto = f"confidence {confidence:.0%} below 65% floor"
+        elif action == "WATCH" and confidence < 0.62:
+            veto = "low conviction WATCH"
+
+        if veto:
+            logger.info(f"VETO: {ticker} {action} | {veto}")
             with get_conn() as conn:
                 conn.execute("""
                     INSERT INTO daily_stats (trade_date, signals_rejected)
@@ -184,14 +199,11 @@ def run_scan(full_universe: bool = False) -> list[dict]:
 
         buffered.append((signal, snapshot))
 
-    # Step 5c: LLM three-committee second pass on top 5 BUY/SELL candidates
-    actionable = sorted(
-        [(s, snap) for s, snap in buffered if s["action"] in ("BUY", "SELL")],
-        key=lambda x: x[0]["confidence"],
-        reverse=True,
-    )
+    # Step 5c: LLM three-committee pass on ALL BUY/SELL candidates
     llm_reviewed: set[str] = set()
-    for signal, snapshot in actionable[:5]:
+    for signal, snapshot in buffered:
+        if signal["action"] not in ("BUY", "SELL"):
+            continue
         ticker = signal["ticker"]
         try:
             articles = fetch_news(ticker)
@@ -209,11 +221,17 @@ def run_scan(full_universe: bool = False) -> list[dict]:
                         signal[key] = enriched[key]
                 llm_reviewed.add(ticker)
                 logger.info(
-                    f"LLM enriched {ticker}: {enriched['action']} "
+                    f"LLM verdict {ticker}: {enriched['action']} "
                     f"conf={enriched['confidence']:.0%} rr={enriched.get('risk_reward', 0):.1f}"
                 )
+            else:
+                logger.info(f"LLM rejected {ticker} — no valid response, downgrading to WATCH")
+                signal["action"] = "WATCH"
+                signal["confidence"] = 0.55
         except Exception as e:
-            logger.warning(f"LLM enrichment failed for {ticker}: {e}")
+            logger.warning(f"LLM review failed for {ticker}, downgrading to WATCH: {e}")
+            signal["action"] = "WATCH"
+            signal["confidence"] = 0.55
 
     # Save all buffered signals
     for signal, snapshot in buffered:
@@ -222,13 +240,9 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         confidence = signal.get("confidence", 0.0)
         risk_reward = signal.get("risk_reward", 0.0)
 
-        # Re-check floors after LLM may have changed confidence or action
-        below_floor = (
-            (action == "WATCH" and confidence < 0.62) or
-            (action in ("BUY", "SELL") and (confidence < 0.60 or risk_reward < 1.2))
-        )
-        if below_floor:
-            logger.info(f"POST-LLM PASS: {ticker} | {action} | conf={confidence:.0%} | R/R={risk_reward:.1f}")
+        # Final gate after LLM — must pass R/R and confidence
+        if action in ("BUY", "SELL") and (confidence < 0.70 or risk_reward < 1.5):
+            logger.info(f"FINAL GATE: {ticker} {action} blocked | conf={confidence:.0%} R/R={risk_reward:.1f}")
             continue
 
         save_signal(
@@ -236,7 +250,7 @@ def run_scan(full_universe: bool = False) -> list[dict]:
             action=action,
             confidence=confidence,
             price_target=signal.get("price_target", snapshot["price"]),
-            stop_loss=signal.get("stop_loss", snapshot["price"] * 0.98),
+            stop_loss=signal.get("stop_loss", snapshot["price"] - snapshot.get("atr", snapshot["price"] * 0.02)),
             reasoning=signal.get("reasoning", ""),
             asset_type="stock",
             entry_price=snapshot.get("price"),

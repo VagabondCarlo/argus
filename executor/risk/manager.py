@@ -7,12 +7,16 @@ logger = logging.getLogger(__name__)
 
 
 def get_weekly_trade_count() -> int:
-    """Count trades executed since Monday of current week (UTC)."""
+    """Count trade ENTRIES since Monday of current week (UTC).
+
+    Close rows (order_id='close') are excluded — a round trip is one trade,
+    not two, so 25/week means 25 actual entries.
+    """
     today = datetime.now(timezone.utc).date()
     monday = today - timedelta(days=today.weekday())
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM trades WHERE date(executed_at) >= ?",
+            "SELECT COUNT(*) as cnt FROM trades WHERE date(executed_at) >= ? AND order_id != 'close'",
             (monday.isoformat(),)
         ).fetchone()
     return row["cnt"] if row else 0

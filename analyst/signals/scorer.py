@@ -36,7 +36,7 @@ def is_premarket() -> bool:
     return now.replace(hour=7, minute=0) <= now < now.replace(hour=9, minute=30)
 
 
-def recently_analyzed(ticker: str, hours: int = 4) -> bool:
+def recently_analyzed(ticker: str, hours: float = 4) -> bool:
     """Return True if this ticker was already scored within the last N hours."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     with get_conn() as conn:
@@ -97,7 +97,9 @@ def run_scan(full_universe: bool = False) -> list[dict]:
         tickers = [t for t in tickers if not recently_analyzed(t, hours=4)]
     elif is_market_hours():
         tickers = get_scalp_universe()
-        tickers = [t for t in tickers if not recently_analyzed(t, hours=1)]
+        # 20-min cooldown: a scalp setup forming NOW must get re-scored while
+        # it's still tradeable, not an hour later
+        tickers = [t for t in tickers if not recently_analyzed(t, hours=1 / 3)]
     else:
         tickers = get_core_universe()
         tickers = [t for t in tickers if not recently_analyzed(t, hours=4)]
@@ -325,8 +327,8 @@ def run_extended_scan() -> list[dict]:
     for ticker, name in METALS_PAIRS.items():
         all_assets[ticker] = (name, "metal")
 
-    # Skip assets scored within the last 2 hours
-    to_scan = {t: v for t, v in all_assets.items() if not recently_analyzed(t, hours=2)}
+    # 30-min cooldown — crypto executes 24/7 now, stale scores cost trades
+    to_scan = {t: v for t, v in all_assets.items() if not recently_analyzed(t, hours=0.5)}
     if not to_scan:
         logger.info("Extended scan: all assets scored recently — skipping")
         return []

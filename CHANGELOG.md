@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-07-16 — v2.0
+
+### Why v2
+The v1 trial (June 16 – July 6) generated 2,559 signals but stopped trading after June 17.
+Root-cause chain: oversized June 17 entries → hard-cut close failed (resting stop orders
+held the shares, Alpaca rejected with "insufficient qty") → 10 positions stuck over the
+3-position limit → every subsequent BUY skipped → 0 trades for 19 days, undetected.
+
+A replay of all 733 archived BUY/SELL signals against actual 15-min price history found:
+signals ≥0.72 confidence won 56% at ~2:1 R/R (+20.4R across stocks and crypto); the
+0.70–0.72 slice lost ~23R; everything below 0.66 was net negative. The active .env
+threshold was 0.66.
+
+### Execution engine
+- **Threshold 0.72** everywhere — one value in shared config, no more code-vs-.env drift
+- **Ranked batch selection** — executor pulls every fresh candidate, ranks by confidence
+  (R/R tiebreak), fills open slots best-first. v1 took the first signal over threshold
+- **30-min signal expiry** — stale entries never execute at prices that no longer exist
+- **Crypto executes via Alpaca 24/7** (GTC market orders, position monitor as the stop —
+  Alpaca doesn't support stop/bracket orders on crypto). Non-listed coins skipped cleanly
+- **Audit path removed from the watcher** — the 0.70–0.72 zone it served was the money
+  loser in replay; /audit REST endpoint remains
+- Forex/metals stay signal-only (no broker route)
+
+### Bug fixes from v1
+- Hard cut now cancels resting stop/take-profit orders before closing (the June 17 jam)
+- Monitor-driven closes recorded in trades/daily_stats (risk limits can now see them)
+- Breakeven is a real software stop — v1 only sent the notification, nothing enforced it
+- High-confidence WATCH signals could fall through to a live SELL order — now filtered
+- Position monitor runs 24/7 for crypto; crypto position sizing uses 6-decimal qty
+  (2-decimal rounding zeroed out BTC-sized orders)
+
+### Tests
+- `tests/test_execution_path.py` — 10 integration tests driving the real
+  process_pending_signals() against a temp DB with only the broker/Telegram mocked.
+  Run after ANY pipeline change: `venv/bin/python -m pytest tests/ -v`
+
+### Timing (sharpened same-day)
+- Analyst scans: market hours 15 → 5 min; pre/after-hours 30 → 15 min; overnight 60 → 15 min
+- Per-ticker cooldowns: scalp stocks 1 h → 20 min; crypto/forex/metals 2 h → 30 min
+- Executor signal watcher and position monitor: 30s flat, 24/7 (monitor cadence = the
+  crypto stop's granularity)
+- Signal expiry 30 → 15 min — a fresh scan batch always lands before signals go stale
+- Watch item: 3x yfinance request rate — if 429/throttle errors appear in analyst logs,
+  back the market-hours interval off to 600s before touching anything else
+
+### Flaw-review fixes (same-day)
+- **Software stop/target enforcement** — the monitor now looks up each position's
+  originating signal and closes at its actual stop/target. Critical: crypto and
+  fractional stock positions (any stock >$100/share at the $100 cap) carry NO
+  broker-side protective orders, so without this the replayed edge (exit at target/stop)
+  never happens live. Exit priority: signal stop → signal target → -3% hard cut
+  (backstop) → breakeven exit
+- **Entry drift guard** — a signal executing minutes after birth is skipped if price
+  already ran past half the risk distance toward target, or through the stop
+- **Notify-once** — order failures mark the signal handled (no 30s retry+ping loop);
+  risk-limit alerts fire once per distinct reason; failing monitor closes retry
+  quietly after the first alert
+- **Pre-market signals execute at the open** — for the first 15 min after 9:30 the
+  stock window reaches back through the pre-market session; drift guard rejects gaps
+- Weekly trade cap counts entries only (round trip = 1 trade, so 25/week means 25 entries)
+- Watcher and /audit endpoint serialized by a lock (no racing past the position limit)
+- Breakeven-armed flags persist across restarts (data/breakeven_armed.json)
+- Closes record actual fill price when available, not the last snapshot
+- Test suite now 15 tests
+
+### Config notes
+- Tier 1/Tier 2 channel IDs commented out in .env — no public posts until relaunch decision
+- v1 archive untouched at ~/argus_backup_20260707/
+
 ## 2026-06-24
 
 ### Incident: Firewall Lockout — Both Mac Minis
@@ -7,7 +77,7 @@
 
 **Root cause:** Changes were batched without verifying access between each one. The `--setblockall` flag overrides all per-app firewall exceptions. `UsePAM no` crashes sshd on macOS because PAM is required for session setup.
 
-**Recovery:** Required physical monitor + keyboard on each Mac Mini. Fix script served from MacBook via `python3 -m http.server 8888`, pulled from each Mini with `curl [REDACTED-LAN]:8888/fix|sudo bash`. Script removed the bad sshd config, disabled the firewall, and restarted sshd.
+**Recovery:** Required physical monitor + keyboard on each Mac Mini. Fix script served from MacBook via `python3 -m http.server 8888`, pulled from each Mini with `curl <macbook-lan>:8888/fix|sudo bash`. Script removed the bad sshd config, disabled the firewall, and restarted sshd.
 
 **Lesson:** Never batch security changes. Test each one individually and verify SSH access before proceeding to the next.
 

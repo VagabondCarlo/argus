@@ -29,9 +29,19 @@ class Config:
     MASTER_KEY = os.getenv("MASTER_KEY", "")
 
     # Trading rules — hard limits, not suggestions
-    CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
+    # 0.72 floor set from the v1 signal replay (June 16 – July 6 archive):
+    # >=0.72 won 56% at ~2:1 R/R (+20.4R); the 0.70-0.72 slice lost ~23R.
+    CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.72"))
     MAX_TRADES_PER_WEEK = int(os.getenv("MAX_TRADES_PER_WEEK", "25"))
     MAX_OPEN_POSITIONS  = int(os.getenv("MAX_OPEN_POSITIONS", "3"))
+
+    # Signals older than this never execute — a scalp entry from 15+ minutes
+    # ago is priced on a market that no longer exists. Scans run every 5 min
+    # during market hours, so a fresh batch always arrives before expiry.
+    SIGNAL_MAX_AGE_MINUTES = int(os.getenv("SIGNAL_MAX_AGE_MINUTES", "15"))
+
+    # Crypto executes through Alpaca 24/7; forex/metals stay signal-only (no broker)
+    CRYPTO_ENABLED = os.getenv("CRYPTO_ENABLED", "true").lower() == "true"
 
     # Position sizing — always based on ACCOUNT_CAPITAL, never on broker cash balance
     # This prevents oversized positions on paper accounts that have large starting balances

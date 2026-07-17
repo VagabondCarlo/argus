@@ -43,13 +43,14 @@ def scan_loop():
     Argus never sleeps. Scans run 24/7 — stocks, crypto, forex, metals.
 
     Frequencies by session (ET):
-    - Pre-market  07:00–09:30  →  stocks (full universe) + extended, every 30 min
-    - Market      09:30–16:00  →  stocks (core universe) + extended, every 15 min
-    - After-hours 16:00–20:00  →  stocks (core) + extended, every 30 min
-    - Overnight   20:00–07:00  →  extended only (crypto/forex/metals), every 60 min
+    - Pre-market  07:00–09:30  →  stocks (full universe) + extended, every 15 min
+    - Market      09:30–16:00  →  stocks (scalp universe) + extended, every 5 min
+    - After-hours 16:00–20:00  →  stocks (core) + extended, every 15 min
+    - Overnight   20:00–07:00  →  extended only (crypto/forex/metals), every 15 min
 
-    Dedup: stocks skip if scored within 4 h; crypto/forex/metals skip if within 2 h.
-    Execution stays gated to market hours in the executor.
+    Per-ticker cooldowns live in scorer.py: scalp stocks 20 min, extended 30 min,
+    full/core universe 4 h. Execution stays gated to market hours in the executor
+    (crypto executes 24/7).
     """
     while True:
         try:
@@ -62,27 +63,27 @@ def scan_loop():
                 session = "pre-market"
                 run_scan(full_universe=True)
                 run_extended_scan()
-                interval = 1800
+                interval = 900
 
             elif is_market_hours():
                 # Core trading session
                 session = "market"
                 run_scan(full_universe=False)
                 run_extended_scan()
-                interval = 900
+                interval = 300
 
             elif 16 <= hour < 20 and weekday < 5:
                 # After-hours (stocks still have extended quotes)
                 session = "after-hours"
                 run_scan(full_universe=False)
                 run_extended_scan()
-                interval = 1800
+                interval = 900
 
             else:
-                # Overnight — crypto and forex never close
+                # Overnight — crypto and forex never close, and crypto executes 24/7
                 session = "overnight"
                 run_extended_scan()
-                interval = 3600
+                interval = 900
 
             logger.info(f"[{session}] scan cycle complete — next in {interval//60} min")
 

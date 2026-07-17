@@ -9,3 +9,5 @@ venv/
 logs/
 *.log
 docs/setup-log.md
+data/
+maintenance.flag

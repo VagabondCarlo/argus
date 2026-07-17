@@ -105,6 +105,80 @@ def save_signal(ticker, action, confidence, price_target, stop_loss, reasoning, 
               _utcnow(), asset_type, entry_price))
 
 
+def get_recent_signals(min_confidence: float, asset_types: list[str], max_age_minutes: int):
+    """Unexecuted BUY/SELL candidates within the freshness window, best first.
+
+    The executor ranks whole scan batches instead of taking signals in arrival
+    order, so this must return every live candidate — not just the first match.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
+    placeholders = ",".join("?" * len(asset_types))
+    query = f"""
+        SELECT * FROM signals
+        WHERE generated_at >= ?
+        AND confidence >= ?
+        AND executed = 0
+        AND asset_type IN ({placeholders})
+        ORDER BY confidence DESC
+    """
+    with get_conn() as conn:
+        rows = conn.execute(query, [cutoff, min_confidence, *asset_types]).fetchall()
+    return [dict(r) for r in rows]
+
+
+def record_position_close(ticker: str, close_price: float, pnl: float):
+    """Mark the most recent open trade for a ticker as closed.
+
+    Used by the position monitor (hard cut / breakeven exit) so risk limits
+    and win-rate stats see monitor-driven closes, not just signal-driven ones.
+    Ticker matching is separator-insensitive: Alpaca reports crypto positions
+    as BTCUSD while signals store BTC-USD.
+    """
+    norm = ticker.replace("-", "").replace("/", "")
+    now = _utcnow()
+    trade_date = _utc_today()
+    is_win = pnl >= 0
+    with get_conn() as conn:
+        conn.execute("""
+            UPDATE trades SET closed_at=?, close_price=?, pnl=?, status='closed'
+            WHERE id = (
+                SELECT t.id FROM trades t
+                JOIN signals s ON t.signal_id = s.id
+                WHERE REPLACE(REPLACE(s.ticker, '-', ''), '/', '') = ?
+                AND t.status = 'open'
+                ORDER BY t.executed_at DESC LIMIT 1
+            )
+        """, (now, close_price, pnl, norm))
+        conn.execute("""
+            INSERT INTO daily_stats (trade_date, wins, losses, total_pnl)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(trade_date) DO UPDATE SET
+                wins      = wins      + excluded.wins,
+                losses    = losses    + excluded.losses,
+                total_pnl = total_pnl + excluded.total_pnl
+        """, (trade_date, 1 if is_win else 0, 0 if is_win else 1, pnl))
+
+
+def get_signal_levels_for_position(ticker: str) -> dict | None:
+    """Stop/target from the signal that opened the most recent open trade for a ticker.
+
+    The position monitor enforces these in software — most positions have no
+    broker-side protection (no stop/limit legs on crypto or fractional stock
+    orders). Ticker matching is separator-insensitive: positions report BTCUSD,
+    signals store BTC-USD.
+    """
+    norm = ticker.replace("-", "").replace("/", "").upper()
+    with get_conn() as conn:
+        row = conn.execute("""
+            SELECT s.stop_loss, s.price_target
+            FROM trades t JOIN signals s ON t.signal_id = s.id
+            WHERE REPLACE(REPLACE(UPPER(s.ticker), '-', ''), '/', '') = ?
+            AND t.status = 'open'
+            ORDER BY t.executed_at DESC LIMIT 1
+        """, (norm,)).fetchone()
+    return dict(row) if row else None
+
+
 def get_todays_signals(min_confidence=0.0, asset_type: str | None = None):
     today = _utc_today()
     query = """

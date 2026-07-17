@@ -22,6 +22,7 @@ from executor.risk.manager import (
 )
 from executor.audit.auditor import run_audit
 from notifications.bot import send_sync_notification
+from notifications.track_record import post_trade_close
 from analyst.data.market import get_market_snapshot
 from analyst.sentiment.analyzer import get_spy_context
 from datetime import datetime, timedelta, timezone
@@ -134,6 +135,7 @@ def _monitor_close(p: dict) -> tuple[bool, float, float]:
     record_position_close(ticker, close_price, pnl)
     _breakeven_moved.discard(ticker)
     _breakeven_save()
+    post_trade_close(ticker)  # public track-record feed — every close, W or L
     return True, close_price, pnl
 
 
@@ -411,25 +413,14 @@ def _execute_signal_locked(signal: dict, account: dict) -> bool:
         close_price = result.get("fill_price") or existing["current_price"]
         pnl = (close_price - existing["avg_entry"]) * existing["qty"]
         is_win = pnl >= 0
-        now_utc = datetime.now(timezone.utc).isoformat()
-        trade_date = datetime.now(timezone.utc).date().isoformat()
 
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
-            conn.execute("""
-                INSERT INTO trades
-                  (signal_id, order_id, fill_price, quantity, executed_at, closed_at, close_price, pnl, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'closed')
-            """, (signal["id"], "close", existing["avg_entry"], existing["qty"],
-                  now_utc, now_utc, close_price, pnl))
-            conn.execute("""
-                INSERT INTO daily_stats (trade_date, wins, losses, total_pnl)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(trade_date) DO UPDATE SET
-                    wins      = wins      + excluded.wins,
-                    losses    = losses    + excluded.losses,
-                    total_pnl = total_pnl + excluded.total_pnl
-            """, (trade_date, 1 if is_win else 0, 0 if is_win else 1, pnl))
+        # Close the original entry's trade row. v1 inserted a separate 'close'
+        # row and left the entry open forever — breaking open-position counts,
+        # held-time on the feed, and stop/target lookups for the ticker.
+        record_position_close(existing["ticker"], close_price, pnl)
+        post_trade_close(existing["ticker"])
 
         outcome = "✅ WIN" if is_win else "❌ LOSS"
         notify(

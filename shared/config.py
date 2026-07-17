@@ -49,6 +49,11 @@ class Config:
     # orders, hard cuts). "all": push everything (v1 behavior).
     NOTIFY_MODE = os.getenv("NOTIFY_MODE", "digest")
 
+    # Public track-record feed: every closed trade + daily recap post here.
+    # Unset = preview mode (posts go to the owner's chat tagged [PREVIEW]).
+    # Set to the Tier 1 channel ID to go public.
+    TRACK_RECORD_CHANNEL_ID = os.getenv("TRACK_RECORD_CHANNEL_ID", "")
+
     # Position sizing — always based on ACCOUNT_CAPITAL, never on broker cash balance
     # This prevents oversized positions on paper accounts that have large starting balances
     MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "0.20"))   # 20% of ACCOUNT_CAPITAL per trade

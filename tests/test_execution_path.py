@@ -46,6 +46,7 @@ def ex(tmp_path, monkeypatch):
     monkeypatch.setattr(exmod, "close_position", fake_close_position)
     monkeypatch.setattr(exmod, "cancel_open_orders", lambda t: 0)
     monkeypatch.setattr(exmod, "send_sync_notification", lambda *a, **k: None)
+    monkeypatch.setattr(exmod, "post_trade_close", lambda t: None)  # no Telegram from tests
     monkeypatch.setattr(exmod, "is_crypto_tradable", lambda t: True)
     monkeypatch.setattr(exmod, "_is_market_hours", lambda: True)
 
@@ -168,19 +169,44 @@ def test_duplicate_ticker_takes_strongest(ex):
 
 
 def test_sell_closes_position_and_records_trade(ex, monkeypatch):
+    """Full round trip: BUY opens the trade row, SELL closes THAT row —
+    v1 left the entry row open forever and inserted a separate close row."""
+    _signal("TSLA", "BUY", 0.74)
+    ex.process_pending_signals()          # entry
+    assert len(ex.orders) == 1
+
     monkeypatch.setattr(ex, "get_open_positions", lambda: [{
         "ticker": "TSLA", "qty": 2.0, "avg_entry": 100.0,
         "current_price": 105.0, "unrealized_pnl": 10.0, "asset_class": "stock",
     }])
     _signal("TSLA", "SELL", 0.74)
-
-    ex.process_pending_signals()
+    ex.process_pending_signals()          # exit
 
     assert ex.closes == ["TSLA"]
     with db.get_conn() as conn:
-        trade = conn.execute("SELECT status, pnl FROM trades").fetchone()
-    assert trade["status"] == "closed"
-    assert trade["pnl"] == 10.0
+        rows = conn.execute("SELECT status, pnl FROM trades").fetchall()
+    assert len(rows) == 1                 # one round trip = one row
+    assert rows[0]["status"] == "closed"
+    assert rows[0]["pnl"] == 10.0
+
+
+def test_track_record_card_format():
+    """The public feed card: monospace numbers, running record, paper label."""
+    from notifications.track_record import format_trade_close
+    t = {
+        "ticker": "SOL-USD", "confidence": 0.68, "fill_price": 73.83,
+        "close_price": 75.14, "quantity": 2.708926, "pnl": 3.55,
+        "executed_at": "2026-07-17T13:08:05+00:00",
+        "closed_at": "2026-07-17T17:20:05+00:00",
+    }
+    rec = {"wins": 5, "losses": 3, "total_trades": 8,
+           "win_rate": 0.625, "total_pnl": 14.20}
+    card = format_trade_close(t, rec)
+    assert "✅ WIN — SOL-USD" in card
+    assert "+$3.55" in card
+    assert "5W-3L" in card
+    assert "held 4h 12m" in card
+    assert "paper trading" in card
 
 
 def test_drift_guard_skips_chased_price(ex, monkeypatch):

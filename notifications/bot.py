@@ -160,6 +160,15 @@ async def job_aftermarket_report(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def job_daily_recap(context: ContextTypes.DEFAULT_TYPE):
+    """Public track-record daily recap — runs all 7 days (crypto trades weekends)."""
+    from notifications.track_record import format_daily_recap, send_channel_post
+    try:
+        send_channel_post(format_daily_recap())
+    except Exception as e:
+        logger.error(f"Daily recap failed: {e}")
+
+
 async def job_broadcast(context: ContextTypes.DEFAULT_TYPE):
     """Broadcast job — time_slot passed via context.job.data."""
     from analyst.signals.broadcaster import run_broadcast
@@ -1134,6 +1143,7 @@ def run_bot():
     jq.run_daily(job_broadcast, time=time(8, 15, tzinfo=ET),  days=(0,1,2,3,4,5,6), data="morning")
     jq.run_daily(job_broadcast, time=time(12, 0, tzinfo=ET),  days=(0,1,2,3,4,5,6), data="midday")
     jq.run_daily(job_broadcast, time=time(16, 30, tzinfo=ET), days=(0,1,2,3,4,5,6), data="aftermarket")
+    jq.run_daily(job_daily_recap, time=time(16, 40, tzinfo=ET), days=(0,1,2,3,4,5,6))
 
     logger.info("Argus bot started — owner reports (ET weekdays) + channel broadcasts 8:15/12:00/16:30 ET daily")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -8,6 +8,26 @@ Built as a functional portfolio piece demonstrating applied AI, distributed syst
 
 ---
 
+## Version 2 — Current
+
+**`main` is Argus v2.** Version 1 ran a 22-day live trial (June 16 – July 7, 2026), analyzed 2,559 signals, and was retired to build a sharper system on what the data proved. The v1 codebase is frozen at [`v1-archive`](../../tree/v1-archive) / tag [`v1.0-final`](../../releases/tag/v1.0-final) — see the [full diff](../../compare/v1.0-final...main).
+
+What changed, and why:
+
+| | v1 | v2 |
+|---|---|---|
+| Confidence threshold | 0.66–0.75 (drifted between code and config) | **0.72** — set by replaying all 733 archived signals against price history: ≥0.72 won 56% at ~2:1 R/R, the 0.66–0.72 zone was net negative |
+| Signal selection | First signal over threshold | **Ranked batch** — fills open slots best-first |
+| Crypto | Signals only, never executed | **Executes 24/7 via Alpaca** (8 pairs) |
+| Exits | Broker bracket orders (silently absent on crypto and fractional positions) | **Software stop/target enforcement** — the monitor closes every position at its signal's levels |
+| Entry quality | Executed at any price, any age | **15-min signal expiry + drift guard** (no chasing past half the risk distance) |
+| Cadence | 15-min scans, 60s executor | **5-min scans, 30s executor/monitor loops** |
+| Testing | Manual | **15 integration tests** on the signal→execution path |
+
+v1's fatal flaw, found post-mortem: resting stop orders held the shares, so the risk monitor's position closes were silently rejected — stuck positions jammed the 3-slot limit and blocked every trade for 19 days. v2 cancels resting orders before any close, and a test now guards that path.
+
+---
+
 ## Architecture
 
 ```
@@ -259,11 +279,9 @@ Guests can talk to Argus in plain text — ask about a ticker, a forex pair, or 
 
 ## Results
 
-*Paper trading live as of June 2026. 30-day minimum track record before any live capital consideration.*
+**v1 trial (June 16 – July 7, 2026):** 2,559 signals analyzed across four asset classes. The replay of its archive against actual price history is what set v2's execution threshold — the trial's product was evidence, not P&L.
 
-| Week | Trades | Win Rate | P&L |
-|---|---|---|---|
-| Week 1 (Jun 16–20) | In progress | — | Positions open: ADBE, BABA, MS, XPEV |
+**v2 (live since July 16, 2026):** Paper trading with the rebuilt execution engine. 30-day minimum track record before any live capital consideration. Results will be posted here weekly.
 
 ---
 

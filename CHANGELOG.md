@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-07-17 (afternoon) — Selective + active: the two-book model
+
+**Mike's call after the first loss posted: not keen on constant losses — something missing.**
+Diagnosis: two conflicting jobs (public track record vs calibration data) were sharing
+one account. Fixed by splitting them:
+
+- **Real book: execution floor back to 0.72** — every live trade is in the replay-proven
+  band (56% at ~2:1). The record only carries evidence-backed trades.
+- **Shadow book (new): virtual outcome scoring** — nightly job (analyst/shadow_book.py,
+  launchd com.argus.shadowbook 21:37 ET) replays every untraded 0.62+ signal against
+  actual 15-min bars and records win/loss/expired + R to a virtual_outcomes table.
+  Full calibration dataset, zero real losses. Same conservative rules as the July replay.
+  First run: 23 scored, 4 resolved (0.66-0.72 band 2W-0L, +2R virtual).
+- **Crypto universe 9 → 19 pairs** — DOT, LTC, BCH, AAVE, SHIB, FIL, CRV, SUSHI, YFI, BAT
+  added; each validated Alpaca-tradable AND yfinance-data-rich before inclusion.
+  Breadth is the flow lever, not looser gates.
+- Note for the record: the 0W-1L on the books at this decision was the six-cent BTC
+  pipeline-verification close, not a strategy loss.
+
+## 2026-07-17 (midday) — Guest LLM guardrails
+
+- Input screening (jailbreak playbook regexes, length cap, URL limits) — flagged
+  messages never reach the LLM and do not consume guest question quota
+- 3 strikes in 24h = 24h mute per user_id; every flag logged
+- Prompt hardening: guest text wrapped as untrusted data; security restatement at
+  prompt end; model pinned to llama3.1:8b (host also serves an uncensored model)
+- Output screening: prompt leaks, persona breaks, directive trading language
+  ("you should buy"), and "guaranteed profit" claims replaced before sending
+- Research agent (OpenClaw) now receives ticker-only prompts, never raw guest text
+- 17 guardrail tests; suite at 38
+
+## 2026-07-17 (midday) — User interaction layer
+
+- Public track-record feed: every position close posts a card (entry/exit/P&L/
+  running record) + daily recap 16:40 ET; preview mode until TRACK_RECORD_CHANNEL_ID set
+- Free tier broadcast redesigned in the same visual language; upsell removed (Tier 2 TBD)
+- Digest notification mode: routine trade pushes off; only risk/failure events ping Mike
+- Fixed: v1 SELL-close left the entry trade row open forever
+
 ## 2026-07-17 — Data-collection phase begins
 
 - **Full-slots mode (same day, Mike's call):** execution floor lowered to 0.62 and the

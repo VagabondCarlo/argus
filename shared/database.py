@@ -56,6 +56,21 @@ def init_db():
                 losses           INTEGER DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS virtual_outcomes (
+                signal_id   INTEGER PRIMARY KEY REFERENCES signals(id),
+                ticker      TEXT,
+                action      TEXT,
+                confidence  REAL,
+                asset_type  TEXT,
+                entry       REAL,
+                stop        REAL,
+                target      REAL,
+                outcome     TEXT,
+                exit_price  REAL,
+                r_multiple  REAL,
+                resolved_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS paid_users (
                 user_id   INTEGER PRIMARY KEY,
                 username  TEXT,

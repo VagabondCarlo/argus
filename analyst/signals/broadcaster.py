@@ -109,65 +109,61 @@ def format_tier1_broadcast(
     time_slot: str = "morning",
 ) -> str:
     """
-    Free public channel — one pick per asset class, second-best signal.
-    The top pick is reserved for Tier 2 (paid). Clear upgrade path shown.
+    Free public channel — same visual language as the track-record cards:
+    tight monospace watchlist, the system's ACTUAL top pick per class (levels
+    are the paid gate, not the ranking), and the running record on every post
+    so no single message can cherry-pick. One-line disclaimer; the long
+    disclosure lives in the pinned post.
     """
+    from shared.database import get_win_rate, get_conn
+
     now = datetime.now(ET)
-    today = now.strftime("%A, %B %d %Y")
-    ts = now.strftime("%-I:%M %p ET")
     emoji, slot_title, slot_sub = _SLOT_HEADERS.get(time_slot, _SLOT_HEADERS["morning"])
+    regime = market_regime.split(" — ")[0].upper()
+
     lines = [
-        f"{emoji} <b>ARGUS — {slot_title}</b>",
-        f"<i>{today}  ·  {slot_sub}</i>",
-        f"Market: <b>{market_regime.split(' — ')[0].upper()}</b>  |  <i>Data: {ts}</i>",
-        "",
-        _RISK_DISCLOSURE,
+        f"{emoji} <b>ARGUS — {now.strftime('%a %b %d')}</b>",
+        f"<i>{slot_sub} · {regime} · {now.strftime('%-I:%M %p ET')}</i>",
         "",
     ]
 
-    sections = [
-        ("stock", stocks),
-        ("forex", forex),
-        ("metal", metals),
-        ("crypto", crypto),
-    ]
+    picks = []
+    for asset_type, cls in (("stock", stocks), ("crypto", crypto),
+                            ("metal", metals), ("forex", forex)):
+        top = next((p for p in cls if p["action"] in ("BUY", "SELL")), None)
+        if top:
+            picks.append((asset_type, top))
 
-    has_any = False
-    for asset_type, picks in sections:
-        # Index [1] = second-most-confident pick; [0] is reserved for Pro
-        pick = picks[1] if len(picks) >= 2 else (picks[0] if picks else None)
-
-        lines.append(f"{_asset_emoji(asset_type)} <b>{_section_header(asset_type)}</b>")
-
-        if not pick:
-            lines.append("  No setup today.")
-        else:
-            has_any = True
-            name = pick.get("display_name", pick["ticker"])
-            conf = pick["confidence"]
-            action = pick["action"]
+    if picks:
+        lines.append("Top of the watchlist:")
+        for asset_type, p in picks:
+            name = (p.get("display_name") or p["ticker"])[:7]
             lines.append(
-                f"  {_action_emoji(action)} <b>{name}</b> — {action} | {conf:.0%}"
+                f"<code>{_asset_emoji(asset_type)} {name:<7} {p['action']:<4} "
+                f"{_conf_bar(p['confidence'])} {p['confidence']:.0%}</code>"
             )
-            hint = format_execution_tier1(pick)
-            if hint:
-                lines.append(f"  {hint}")
-        lines.append("")
+    else:
+        lines.append("<i>No setups worth watching right now — that's information too.</i>")
 
+    record = get_win_rate()
+    with get_conn() as conn:
+        open_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM trades WHERE status='open'"
+        ).fetchone()["c"]
+    total = record["total_trades"]
+    rec = (
+        f"{record['wins']}W-{record['losses']}L · "
+        f"{'+' if record['total_pnl'] >= 0 else '-'}${abs(record['total_pnl']):,.2f}"
+        if total else "building"
+    )
     lines += [
-        "─────────────────────────────",
-        "📊 <b>What does the % mean?</b>",
         "",
-        "Argus's confidence score — pure technical analysis across RSI,",
-        "MACD, EMA, Bollinger Bands, volume, and social sentiment.",
-        "75%+ means multiple independent indicators aligned on one setup.",
-        "<b>Higher % = stronger technical agreement. Not a guarantee.</b>",
+        f"<code>live {open_count} open · record {rec}</code>",
         "",
-        "─────────────────────────────",
-        "🔒 <b>Pro members get the #1 pick in each class,",
-        "full entry/stop/target levels, and step-by-step execution playbook.</b>",
+        "🔒 Entry, stop + target levels → Pro",
+        "📩 DM @ArgusVagabondBot",
         "",
-        "📩 <b>DM @ArgusVagabondBot to upgrade.</b>",
+        "<i>educational · not financial advice · paper record, every trade posted</i>",
     ]
 
     return "\n".join(lines)

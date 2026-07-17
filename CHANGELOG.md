@@ -2,6 +2,13 @@
 
 ## 2026-07-17 — Data-collection phase begins
 
+- **Full-slots mode (same day, Mike's call):** execution floor lowered to 0.62 and the
+  scorer's directional cutoff aligned to it (0.15 -> 0.12 score). The old cutoff made
+  every sub-0.65 signal WATCH by construction — stocks could never trade at any
+  executor threshold. Now the ranked batch fills all 3 slots with the best available
+  fresh signals. Known cost: replay expectancy in the 0.62-0.66 band was slightly
+  negative; the daily/weekly loss rails are the budget. Recalibration from live fills
+  after ~2 weeks draws the real line.
 - **Execution threshold lowered 0.72 → 0.66 (paper account).** Goal: aggregate live
   outcome data across the full 0.66–0.82 confidence band (~5+ trades/day instead of
   1–2). Every trade records its signal's confidence; after ~2 weeks the threshold

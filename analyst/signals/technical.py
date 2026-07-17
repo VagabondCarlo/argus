@@ -43,13 +43,17 @@ def score_snapshot(snap: dict) -> dict:
     sell_score += 0.05 if vol > 1.5 else 0.02 if vol > 1.2 else 0.0
     sell_score += 0.04 if chg < -1.5 else 0.02 if chg < -0.5 else 0.0
 
-    # ATR-based stops and targets — scalp mode: tight target, fast exit
-    if buy_score >= sell_score and buy_score >= 0.15:
+    # ATR-based stops and targets — scalp mode: tight target, fast exit.
+    # Directional cutoff 0.12 (= 0.62 confidence) matches the executor's
+    # data-collection floor — the old 0.15 cutoff made every sub-0.65 signal
+    # a WATCH by construction, so those setups could never trade at any
+    # executor threshold.
+    if buy_score >= sell_score and buy_score >= 0.12:
         action = "BUY"
         conf = round(min(0.50 + buy_score, 0.82), 2)
         stop_loss = round(price - (1.0 * atr), 2)
         price_target = round(price + (1.0 * atr), 2)
-    elif sell_score > buy_score and sell_score >= 0.15:
+    elif sell_score > buy_score and sell_score >= 0.12:
         action = "SELL"
         conf = round(min(0.50 + sell_score, 0.82), 2)
         stop_loss = round(price + (1.0 * atr), 2)

@@ -44,16 +44,17 @@ def score_snapshot(snap: dict) -> dict:
     sell_score += 0.04 if chg < -1.5 else 0.02 if chg < -0.5 else 0.0
 
     # ATR-based stops and targets — scalp mode: tight target, fast exit.
-    # Directional cutoff 0.12 (= 0.62 confidence) matches the executor's
-    # data-collection floor — the old 0.15 cutoff made every sub-0.65 signal
-    # a WATCH by construction, so those setups could never trade at any
-    # executor threshold.
-    if buy_score >= sell_score and buy_score >= 0.12:
+    # Directional cutoff stays at 0.15 (= 0.65 confidence). We tried 0.12 to
+    # match the executor's 0.62 floor (July 17): every sub-0.65 setup became
+    # a BUY/SELL, immediately hit the hard vetoes (volume, R/R) that WATCHes
+    # bypass, and signal flow dropped to zero. The vetoes are the real quality
+    # gate — flow comes from scanning more assets, not from weakening actions.
+    if buy_score >= sell_score and buy_score >= 0.15:
         action = "BUY"
         conf = round(min(0.50 + buy_score, 0.82), 2)
         stop_loss = round(price - (1.0 * atr), 2)
         price_target = round(price + (1.0 * atr), 2)
-    elif sell_score > buy_score and sell_score >= 0.12:
+    elif sell_score > buy_score and sell_score >= 0.15:
         action = "SELL"
         conf = round(min(0.50 + sell_score, 0.82), 2)
         stop_loss = round(price + (1.0 * atr), 2)

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-17 — Data-collection phase begins
+
+- **Execution threshold lowered 0.72 → 0.66 (paper account).** Goal: aggregate live
+  outcome data across the full 0.66–0.82 confidence band (~5+ trades/day instead of
+  1–2). Every trade records its signal's confidence; after ~2 weeks the threshold
+  gets recalibrated from live fills instead of replayed bars. 0.72 remains the
+  evidence bar from the v1 replay. All risk limits unchanged.
+- Incident: analyst down 07:08–08:20 ET — a stale yfinance tz-cache WAL left by
+  v1's July 7 hard kill broke v2's first pre-market full-universe scan ("unable to
+  open database file" loop). Fix: clear ~/Library/Caches/py-yfinance. If it recurs,
+  same fix.
+- Watchdog moved from cron to launchd (com.argus.watchdog) — macOS cron silently
+  never ran it. Heartbeat file added: /tmp/argus_v2_watchdog_last.
+
+
 ## 2026-07-16 — v2.0
 
 ### Why v2

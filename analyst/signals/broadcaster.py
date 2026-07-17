@@ -160,9 +160,6 @@ def format_tier1_broadcast(
         "",
         f"<code>live {open_count} open · record {rec}</code>",
         "",
-        "🔒 Entry, stop + target levels → Pro",
-        "📩 DM @ArgusVagabondBot",
-        "",
         "<i>educational · not financial advice · paper record, every trade posted</i>",
     ]
 

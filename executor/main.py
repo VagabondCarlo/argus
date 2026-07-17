@@ -76,6 +76,14 @@ _risk_block_reason: str | None = None    # last risk-limit reason sent to Telegr
 _exec_lock = threading.Lock()            # serializes watcher-loop and /audit executions
 
 
+def notify(text: str, critical: bool = False):
+    """Push to Telegram only for events that need a human — risk limits, failed
+    orders, hard cuts. Routine trade activity stays in logs, the DB, and the
+    3 daily reports (NOTIFY_MODE=all restores per-event pushes)."""
+    if critical or config.NOTIFY_MODE == "all":
+        send_sync_notification(text)
+
+
 def _breakeven_path() -> str:
     return os.path.join(os.path.dirname(shared_db.DB_PATH), "breakeven_armed.json")
 
@@ -118,7 +126,7 @@ def _monitor_close(p: dict) -> tuple[bool, float, float]:
         logger.error(f"Monitor close failed {ticker}: {result['error']}")
         if ticker not in _close_fail_notified:
             _close_fail_notified.add(ticker)
-            send_sync_notification(f"❌ *Monitor close failed*: {ticker}\n_{result['error']}_")
+            notify(f"❌ *Monitor close failed*: {ticker}\n_{result['error']}_", critical=True)
         return False, 0.0, 0.0
     _close_fail_notified.discard(ticker)
     close_price = result.get("fill_price") or p["current_price"]
@@ -154,7 +162,7 @@ def _evaluate_position(p: dict, market_open: bool):
         logger.info(f"STOP HIT: {ticker} ${current:.2f} <= stop ${stop:.2f} — closing")
         ok, close_price, pnl = _monitor_close(p)
         if ok:
-            send_sync_notification(
+            notify(
                 f"🔴 *Stop hit* — {ticker} closed at ${close_price:.2f}\n"
                 f"Entry: ${entry:.2f} | Stop: ${stop:.2f} | P&L: ${pnl:+.2f}"
             )
@@ -164,7 +172,7 @@ def _evaluate_position(p: dict, market_open: bool):
         logger.info(f"TARGET HIT: {ticker} ${current:.2f} >= target ${target:.2f} — closing")
         ok, close_price, pnl = _monitor_close(p)
         if ok:
-            send_sync_notification(
+            notify(
                 f"✅ *Target hit* — {ticker} closed at ${close_price:.2f}\n"
                 f"Entry: ${entry:.2f} | Target: ${target:.2f} | P&L: ${pnl:+.2f}"
             )
@@ -175,9 +183,11 @@ def _evaluate_position(p: dict, market_open: bool):
         logger.info(f"HARD CUT: {ticker} down {pnl_pct:.1f}% — closing")
         ok, close_price, pnl = _monitor_close(p)
         if ok:
-            send_sync_notification(
+            # Hard cut = the -3% rail fired, something moved past its stop — human-worthy
+            notify(
                 f"🔴 *Hard cut* — {ticker} closed at {pnl_pct:.1f}%\n"
-                f"Entry: ${entry:.2f} → ${close_price:.2f} (P&L ${pnl:+.2f})"
+                f"Entry: ${entry:.2f} → ${close_price:.2f} (P&L ${pnl:+.2f})",
+                critical=True,
             )
         return
 
@@ -186,7 +196,7 @@ def _evaluate_position(p: dict, market_open: bool):
         logger.info(f"BREAKEVEN EXIT: {ticker} fell back to entry — closing")
         ok, close_price, pnl = _monitor_close(p)
         if ok:
-            send_sync_notification(
+            notify(
                 f"🟡 *Breakeven exit* — {ticker} closed near entry\n"
                 f"Entry: ${entry:.2f} → ${close_price:.2f} (P&L ${pnl:+.2f})"
             )
@@ -196,7 +206,7 @@ def _evaluate_position(p: dict, market_open: bool):
         logger.info(f"BREAKEVEN ARMED: {ticker} up {pnl_pct:.1f}% — locking in")
         _breakeven_moved.add(ticker)
         _breakeven_save()
-        send_sync_notification(
+        notify(
             f"🟡 *Breakeven armed* — {ticker} up {pnl_pct:.1f}%\n"
             f"Will close if price falls back to entry ${entry:.2f}"
         )
@@ -316,7 +326,7 @@ def process_pending_signals():
         # Notify once per distinct reason, not every 30s while the limit holds
         if reason != _risk_block_reason:
             _risk_block_reason = reason
-            send_sync_notification(f"🛡 *Risk limit active — no new trades*\n_{reason}_")
+            notify(f"🛡 *Risk limit active — no new trades*\n_{reason}_", critical=True)
         return
     _risk_block_reason = None
 
@@ -395,7 +405,7 @@ def _execute_signal_locked(signal: dict, account: dict) -> bool:
             # ping Telegram once per signal
             if signal["id"] not in _notified_failures:
                 _notified_failures.add(signal["id"])
-                send_sync_notification(f"❌ *Close failed*: {ticker}\n_{result['error']}_")
+                notify(f"❌ *Close failed*: {ticker}\n_{result['error']}_", critical=True)
             return False
 
         close_price = result.get("fill_price") or existing["current_price"]
@@ -422,7 +432,7 @@ def _execute_signal_locked(signal: dict, account: dict) -> bool:
             """, (trade_date, 1 if is_win else 0, 0 if is_win else 1, pnl))
 
         outcome = "✅ WIN" if is_win else "❌ LOSS"
-        send_sync_notification(
+        notify(
             f"{outcome} *{ticker}* position closed\n"
             f"Entry: ${existing['avg_entry']:.2f} → Exit: ${close_price:.2f}\n"
             f"P&L: ${pnl:+.2f} on {existing['qty']:.4f} shares"
@@ -477,7 +487,7 @@ def _execute_signal_locked(signal: dict, account: dict) -> bool:
         # ~30 Telegram pings for one failure. The next scan re-issues the setup.
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
-        send_sync_notification(f"❌ *Trade failed*: {ticker} {side}\n_{result['error']}_")
+        notify(f"❌ *Trade failed*: {ticker} {side}\n_{result['error']}_", critical=True)
         return False
 
     with get_conn() as conn:
@@ -498,7 +508,7 @@ def _execute_signal_locked(signal: dict, account: dict) -> bool:
         """, (trade_date,))
 
     trades_left = config.MAX_TRADES_PER_WEEK - get_weekly_trade_count()
-    send_sync_notification(
+    notify(
         f"✅ *Trade Executed*\n\n"
         f"{side} {qty:.2f} shares of *{ticker}*\n"
         f"Entry: ${price:.2f} | Stop: ${stop_price:.2f} | Target: ${target_price:.2f}\n"

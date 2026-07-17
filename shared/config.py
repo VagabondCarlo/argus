@@ -43,6 +43,12 @@ class Config:
     # Crypto executes through Alpaca 24/7; forex/metals stay signal-only (no broker)
     CRYPTO_ENABLED = os.getenv("CRYPTO_ENABLED", "true").lower() == "true"
 
+    # Telegram noise control. "digest": routine trade activity (entries, normal
+    # exits, breakeven) is logged + DB-recorded and appears in the 3 daily
+    # reports; pushes fire only for events needing a human (risk limits, failed
+    # orders, hard cuts). "all": push everything (v1 behavior).
+    NOTIFY_MODE = os.getenv("NOTIFY_MODE", "digest")
+
     # Position sizing — always based on ACCOUNT_CAPITAL, never on broker cash balance
     # This prevents oversized positions on paper accounts that have large starting balances
     MAX_POSITION_SIZE = float(os.getenv("MAX_POSITION_SIZE", "0.20"))   # 20% of ACCOUNT_CAPITAL per trade

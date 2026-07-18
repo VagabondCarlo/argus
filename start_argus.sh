@@ -3,6 +3,10 @@ export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
 cd ~/argus_v2
 source venv/bin/activate
 
+# yfinance's tz-cache corrupts under concurrent full-universe fetches
+# (incidents July 17 + 18) — it's disposable, start fresh every boot
+rm -rf ~/Library/Caches/py-yfinance
+
 /opt/homebrew/bin/tmux kill-session -t argus_v2 2>/dev/null
 
 /opt/homebrew/bin/tmux new-session -d -s argus_v2 -n 'analyst'   'source ~/argus_v2/venv/bin/activate && cd ~/argus_v2 && python3 -m analyst.main; read'

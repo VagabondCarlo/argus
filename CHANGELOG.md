@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-18 — Overnight results + cache self-heal
+
+- **First real strategy win: SOL-USD closed +$4.65 at target** (entered 0.68 conf July 17).
+  DOGE closed -$0.33 (entered at 0.65 during the brief full-slots window). Real book:
+  1W-2L, +$4.26 total — both losses were sub-0.72 entries that predate the two-book model.
+- Shadow book nightly run worked: 6 resolved so far (0.66-0.72 band 2/3 wins +1.0R).
+- **Incident (repeat): yfinance tz-cache corruption** took the analyst down 07:19-09:37 ET —
+  same failure as July 17. Now self-healing: the scan loop clears the cache automatically
+  on this error, and start_argus.sh purges it on every boot. Watchdog alerted as designed.
+
 ## 2026-07-17 (afternoon) — Selective + active: the two-book model
 
 **Mike's call after the first loss posted: not keen on constant losses — something missing.**

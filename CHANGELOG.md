@@ -96,6 +96,11 @@ the v2 rebuild. Detailed day-by-day entries follow below.
 Mike's design call: Agent 1 runs all processes, Agent 2 supervises and backs up.
 The Minis now watch each other — no single machine is a blind spot.
 
+- **Security sweep (Mike-requested):** CHANGELOG verified secret-free; two hardcoded
+  private IPs found in watchdog.sh (added same day) moved to gitignored .env
+  (OLLAMA_HOST reused, AGENT1_LAN_IP added). Tracked files now contain no keys,
+  tokens, passwords, or addresses; .env was never tracked; .env.example is
+  placeholders only.
 - **Guardian on Agent 2** (launchd com.argus.guardian, every 5 min, ops/agent2/guardian.sh):
   externally probes Agent 1 over tailscale with LAN fallback. Escalation ladder:
   1 unhealthy check = silent (Agent 1 self-heals); 2 = guardian remote-restarts the

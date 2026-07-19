@@ -36,8 +36,10 @@ fi
 
 # ── Reverse watch: Agent 2's Ollama (LLM dependency) ───────────
 # Notify-only — LLM being down degrades guest chat, not trading,
-# so it must never trigger a stack restart.
-OLLAMA=$(curl -s -m 8 -o /dev/null -w '%{http_code}' http://[REDACTED-TS]:11434/api/tags 2>/dev/null)
+# so it must never trigger a stack restart. Host comes from .env
+# (OLLAMA_HOST) — no addresses in committed files.
+OLLAMA_URL=$(grep '^OLLAMA_HOST' $ARGUS/.env | cut -d= -f2-)
+OLLAMA=$(curl -s -m 8 -o /dev/null -w '%{http_code}' "${OLLAMA_URL}/api/tags" 2>/dev/null)
 if [ "$OLLAMA" != "200" ]; then
   if [ ! -f /tmp/argus_ollama_notified ]; then
     touch /tmp/argus_ollama_notified
@@ -66,7 +68,8 @@ if [ -n "$PROBLEMS" ]; then
     # We already restarted within the cooldown and it's STILL broken → escalate.
     if [ ! -f "$STATE.escalated" ]; then
       touch "$STATE.escalated"
-      notify "🚨 ARGUS WATCHDOG: auto-restart did NOT recover [$PROBLEMS]. Needs you: ssh agent1, then zsh ~/argus_v2/start_argus.sh — or Screen Share vnc://[REDACTED-LAN]."
+      AGENT1_LAN=$(grep '^AGENT1_LAN_IP' $ARGUS/.env | cut -d= -f2-)
+      notify "🚨 ARGUS WATCHDOG: auto-restart did NOT recover [$PROBLEMS]. Needs you: ssh agent1, then zsh ~/argus_v2/start_argus.sh — or Screen Share vnc://${AGENT1_LAN:-<agent1-lan-ip>}."
     fi
   fi
 else

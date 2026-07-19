@@ -34,6 +34,22 @@ else
   PROBLEMS="$PROBLEMS db missing."
 fi
 
+# ── Reverse watch: Agent 2's Ollama (LLM dependency) ───────────
+# Notify-only — LLM being down degrades guest chat, not trading,
+# so it must never trigger a stack restart.
+OLLAMA=$(curl -s -m 8 -o /dev/null -w '%{http_code}' http://[REDACTED-TS]:11434/api/tags 2>/dev/null)
+if [ "$OLLAMA" != "200" ]; then
+  if [ ! -f /tmp/argus_ollama_notified ]; then
+    touch /tmp/argus_ollama_notified
+    notify "⚠️ ARGUS: Agent 2 Ollama unreachable — LLM features degraded, trading unaffected."
+  fi
+else
+  if [ -f /tmp/argus_ollama_notified ]; then
+    rm -f /tmp/argus_ollama_notified
+    notify "✅ ARGUS: Agent 2 Ollama reachable again."
+  fi
+fi
+
 # ── Active recovery ────────────────────────────────────────────
 if [ -n "$PROBLEMS" ]; then
   NOW=$(date +%s)

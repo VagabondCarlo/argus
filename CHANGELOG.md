@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-19 (night) — Two-Mini architecture: Agent 2 becomes guardian + fortification
+
+Mike's design call: Agent 1 runs all processes, Agent 2 supervises and backs up.
+The Minis now watch each other — no single machine is a blind spot.
+
+- **Guardian on Agent 2** (launchd com.argus.guardian, every 5 min, ops/agent2/guardian.sh):
+  externally probes Agent 1 over tailscale with LAN fallback. Escalation ladder:
+  1 unhealthy check = silent (Agent 1 self-heals); 2 = guardian remote-restarts the
+  stack over SSH + notifies; 3 unreachable checks (15 min, both routes) = machine-level
+  alarm to Mike with replica age + failover instructions. Catches what self-monitoring
+  cannot: power loss, kernel panic, network death.
+- **Track-record replication** (com.argus.replica, every 10 min): sqlite .backup snapshot
+  (consistent, never a raw copy), pulled to agent2:~/argus_replica, integrity-checked
+  before promotion, latest + 7 dated dailies. The book survives an Agent 1 disk failure.
+- **Warm standby on Agent 2**: full repo clone + venv + .env at ~/argus_v2. Failover is
+  HUMAN-GATED by design (ops/agent2/takeover.sh, requires typed GO): with two nodes and
+  one brokerage account, auto-failover risks split-brain double-ordering — a paused
+  trader is safe, a duplicated one is not.
+- **Reverse watch**: Agent 1's watchdog now checks Agent 2's Ollama (notify-only —
+  LLM down degrades chat, not trading; never triggers a stack restart).
+- Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
+  only — sshd config untouched per the June 24 lesson).
+
 ## 2026-07-19 (evening) — Self-healing: integrity without a human present
 
 Mike's concern: the system cannot depend on him or an SSH session to recover. Made the

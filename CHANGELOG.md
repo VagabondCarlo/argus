@@ -23,6 +23,30 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-19 (afternoon) — Product: signal terminal + presentation decisions
+
+- **Signal terminal prototype built and approved** ("honest quant terminal" direction):
+  read-only web display, no chat/LLM surface. Deep-midnight + brass, full monospace,
+  green/red reserved for money only. Sections: track record (losses shown first),
+  closed trades ledger, live signal cards with confidence bars vs the 72% conviction
+  line, and the calibration table — real + shadow-book outcomes by confidence band,
+  the accountability data no competitor publishes. Built from live DB data.
+- **Card presentation decision (Mike, final): probability + direction + suggested STOP
+  on the free card; exact ENTRY and TARGET are the Pro gate**, along with real-time
+  alerts (free feed delayed). Rationale: risk is never hidden (industry consensus:
+  "any signal missing a stop-loss is incomplete"), while actionability is what paid
+  buys. Differs deliberately from the standard free/paid split (volume+speed) —
+  standing out was the requirement.
+- Industry research (crypto/forex/AI-stock signal services): complete signal = entry +
+  stop + target + confidence; free tiers gate volume/speed, not the stop; advertised
+  win rates typically run 10-20% above independently tracked reality — which is the
+  gap our every-trade-posted record attacks.
+- **Agent 2 HUD frozen** (com.argus.hud unloaded, script preserved) — Phantom-era
+  dashboard showing retired tools and on-screen IPs; pending rebuild decision.
+- Known issue logged: sub-dollar assets (e.g. BAT) collapse entry/stop/target to the
+  same value at 2-decimal rounding in the scorer — needs decimal-aware rounding before
+  those signals are presentable.
+
 ## 2026-07-19 (evening) — Self-healing: integrity without a human present
 
 Mike's concern: the system cannot depend on him or an SSH session to recover. Made the

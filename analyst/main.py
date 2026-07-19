@@ -90,15 +90,19 @@ def scan_loop():
         except Exception as e:
             logger.error(f"Scan loop error: {e}")
             if "unable to open database file" in str(e):
-                # Recurring failure mode (July 17 + 18): yfinance's sqlite
-                # tz-cache corrupts under the 10-thread full-universe fetch.
-                # The cache is disposable — clear it and self-heal instead of
-                # erroring every 2 minutes until someone notices.
+                # Recurring failure mode (July 17-19): yfinance's sqlite tz-cache
+                # corrupts under the 10-thread full-universe fetch. Clearing the
+                # cache dir in-process does NOT recover — yfinance keeps the cache
+                # DB open, so the live handle stays broken and the loop spins
+                # (observed: 5.5h of silent failures July 19). Only a fresh
+                # process fixes it, so purge the cache and re-exec ourselves.
                 import os as _os
                 import shutil as _shutil
-                cache = _os.path.expanduser("~/Library/Caches/py-yfinance")
-                _shutil.rmtree(cache, ignore_errors=True)
-                logger.warning("Cleared corrupted yfinance cache — self-healing next cycle")
+                import sys as _sys
+                _shutil.rmtree(_os.path.expanduser("~/Library/Caches/py-yfinance"), ignore_errors=True)
+                logger.warning("Corrupted yfinance cache — purged and re-execing analyst process")
+                _sys.stdout.flush()
+                _os.execv(_sys.executable, [_sys.executable, "-m", "analyst.main"])
             interval = 120
 
         time_module.sleep(interval)

@@ -96,6 +96,12 @@ the v2 rebuild. Detailed day-by-day entries follow below.
 Mike's design call: Agent 1 runs all processes, Agent 2 supervises and backs up.
 The Minis now watch each other — no single machine is a blind spot.
 
+- **Full git-history scrub (Mike-requested):** rewrote all 101 commits with
+  git-filter-repo — data/argus.db purged from history (held tester Telegram IDs),
+  all private LAN/Tailscale IPs replaced with [REDACTED] markers in every historical
+  blob. History-wide scan confirmed zero credentials were EVER committed (tokens,
+  keys, passwords, channel IDs: clean since day one). Force-pushed; both Mini clones
+  re-pointed; pre-rewrite bundle retained offline for rollback.
 - **Security sweep (Mike-requested):** CHANGELOG verified secret-free; two hardcoded
   private IPs found in watchdog.sh (added same day) moved to gitignored .env
   (OLLAMA_HOST reused, AGENT1_LAN_IP added). Tracked files now contain no keys,

@@ -1,5 +1,96 @@
 # Changelog
 
+## COMPLETE CHANGE INVENTORY — v1 → v2 (as of July 19, 2026)
+
+One-screen rollup of everything changed, removed, upgraded, or introduced across
+the v2 rebuild. Detailed day-by-day entries follow below.
+
+### Introduced (did not exist in v1)
+- **Two-book model** — real trades only at ≥0.72 confidence (replay-proven band);
+  **shadow book** scores every untraded 0.62+ signal nightly against real price
+  history (`virtual_outcomes` table, `analyst/shadow_book.py`, launchd 21:37 ET).
+  Calibration data with zero real losses.
+- **Crypto execution** — 19 validated Alpaca pairs trade 24/7 (v1 generated crypto
+  signals but could never execute them).
+- **Software stop/target enforcement** — the position monitor closes every position
+  at its signal's actual levels; crypto and fractional stock positions have no
+  broker-side protective orders, so without this the edge never realizes.
+- **Ranked batch selection** — executor ranks each fresh signal batch and fills
+  open slots best-first (v1 took the first signal over threshold).
+- **Entry drift guard + 15-min signal expiry** — no chasing stale prices.
+- **Test suite: 38 tests** — signal→execution path, LLM guardrails, shadow-book
+  resolution. Run after any pipeline change.
+- **Public track-record feed** — every position close posts a card (entry/exit/P&L/
+  running record) + daily recap; preview mode until TRACK_RECORD_CHANNEL_ID set.
+- **Signal terminal (web)** — read-only "honest quant terminal" prototype, approved.
+  Free card: direction + probability + suggested stop; entry & target = Pro gate.
+- **LLM guardrails** on guest chat — input screening (jailbreak playbook), 3-strikes/
+  24h mute, output compliance screening, ticker-only research prompts, model pinned
+  to llama3.1:8b.
+- **Digest notification mode** — routine trade events go to logs/DB/daily reports;
+  Telegram pushes only for events needing a human.
+- **Self-healing** — analyst re-execs itself on yfinance cache corruption; watchdog
+  (launchd, 5 min) auto-restarts the stack and escalates only if that fails.
+- **Two-Mini architecture** — Agent 2 is external guardian (5-min probes, escalation
+  ladder, remote restart), pulls verified DB replicas every 10 min (7-day retention),
+  and holds a warm standby (full clone + venv + env) with **human-gated** failover
+  (`ops/agent2/takeover.sh`) to prevent split-brain double-ordering.
+- Reverse SSH trust (agent2→agent1) and LAN-fallback SSH aliases.
+
+### Upgraded (existed in v1, materially improved)
+- **Confidence threshold 0.72, evidence-based** — set by replaying all 733 archived
+  v1 signals against 15-min history (≥0.72 won 56% at ~2:1; 0.66–0.72 negative;
+  v1 ran at a drifting 0.66–0.75 between code and env).
+- **Timing** — market scans every 5 min (was 15); pre/after-hours 15 (was 30);
+  overnight 15 (was 60); ticker cooldowns 20 min stocks / 30 min crypto (was 1h/2h);
+  executor + monitor loops 30s flat 24/7 (was 60s, market-hours-gated).
+- **Crypto universe 9 → 19 pairs**, each validated Alpaca-tradable AND data-rich.
+- **Position sizing** — crypto uses 6-decimal quantities (2-decimal rounding zeroed
+  out BTC-sized orders); MAX_POSITION_SIZE restored to 0.20 (0.40 was unreplicable
+  with real cash); weekly cap counts entries only (round trip = 1 trade).
+- **Trade records** — closes store actual fill prices; monitor-driven closes are
+  recorded in trades/daily_stats (invisible in v1).
+- **Free-tier broadcast** — redesigned to the terminal visual language: real top
+  picks, monospace watchlist, running record on every post, one-line disclaimer.
+
+### Changed (behavioral decisions)
+- Audit path removed from the watcher loop — the 0.70–0.72 zone it served lost ~23R
+  in replay; `/audit` REST endpoint remains.
+- SELL-signal closes update the original entry's trade row (v1 left entry rows open
+  forever and inserted a duplicate close row).
+- Breakeven is a real software stop, persisted across restarts (v1 only notified).
+- Stocks execute market hours only; crypto 24/7; forex/metals are signal-only.
+- Tier 1/Tier 2 channel posts disabled pending relaunch; upsell lines removed from
+  free tier (Tier 2 positioning TBD).
+
+### Removed / retired
+- v1 codebase — frozen at branch `v1-archive` / tag `v1.0-final` (nothing deleted).
+- HoodHacker/Phantom system (retired July 7; backup preserved).
+- Agent 2 HUD frozen — Phantom-era dashboard, showed retired tools + on-screen IPs.
+- Live database untracked from git (`data/` ignored); LAN IP scrubbed from docs.
+- Per-signal Telegram pushes (replaced by digest mode).
+- WATCH-signal execution fallthrough (v1 bug: a high-confidence WATCH could place
+  a live SELL order).
+
+### Fixed (root causes, not symptoms)
+- **The v1 killer**: resting stop/take-profit orders held shares, so risk-monitor
+  closes were rejected ("insufficient qty") → stuck positions jammed the 3-slot
+  limit → zero trades for 19 days. v2 cancels resting orders before every close;
+  a test guards the path.
+- yfinance tz-cache corruption (chronic, July 17/18/19): boot-time purge + in-loop
+  purge-and-re-exec. In-process cache clearing alone was proven useless (yfinance
+  holds the DB handle open).
+- Scorer/veto interaction: lowering the directional cutoff to 0.62 sent weak setups
+  into hard vetoes and zeroed signal flow — reverted same day. Lesson: flow comes
+  from universe breadth, not looser gates.
+
+### Known issues
+- Sub-dollar assets (e.g. BAT) collapse entry/stop/target at 2-decimal rounding —
+  needs decimal-aware rounding before those signals are presentable.
+- yfinance cache corruption remains chronic; now self-managed (max ~2 min impact).
+- Failover to Agent 2 is deliberately manual (typed GO) — two nodes + one brokerage
+  account cannot safely auto-failover.
+
 ## 2026-07-19 (night) — Two-Mini architecture: Agent 2 becomes guardian + fortification
 
 Mike's design call: Agent 1 runs all processes, Agent 2 supervises and backs up.

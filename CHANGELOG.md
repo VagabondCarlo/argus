@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-07-19 (evening) — Self-healing: integrity without a human present
+
+Mike's concern: the system cannot depend on him or an SSH session to recover. Made the
+Mini heal itself.
+
+- **Analyst crash-loop fixed properly.** The July 17-19 yfinance tz-cache corruption
+  recurred and the in-process cache-clear self-heal did NOT work — yfinance holds the
+  cache DB open, so clearing the dir left a broken live handle and the loop spun silently
+  for 5.5h (watchdog alerted, nothing restarted it). Now on that error the analyst purges
+  the cache AND re-execs its own process (os.execv); a fresh process is the only thing
+  that recovers. Boot-time purge in start_argus.sh stays as backstop.
+- **Watchdog upgraded from alerter to active supervisor.** On any detected outage it now
+  RESTARTS the stack itself via start_argus.sh, tells Mike what it did, and only escalates
+  (needs-you) if a restart within 15 min fails. Runs every 5 min via launchd, independent
+  of SSH or Mike being present. Max unattended downtime ~5 min.
+
 ## 2026-07-18 — Overnight results + cache self-heal
 
 - **First real strategy win: SOL-USD closed +$4.65 at target** (entered 0.68 conf July 17).

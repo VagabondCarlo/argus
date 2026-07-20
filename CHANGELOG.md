@@ -125,6 +125,19 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-20 — Floor set to 0.64 (Mike's call, data-confirmed net-positive)
+
+Mike chose 0.64 as the middle between my 0.66 recommendation and a 0.62 floor.
+Checked the shadow book at exactly that cut before committing:
+- >=0.64 (now REAL): 17 signals, 5 wins, +2.52R total (+0.15R avg) — net positive.
+- 0.62-0.64 (stays shadow-only): 1 signal, -1.0R — the single worst, correctly excluded.
+
+0.64 roughly doubles eligible trade volume vs 0.66 (17 vs 7 shadow signals) while
+staying net-positive — the strong 0.66-0.72 core (+3.06R) outweighs the mild
+0.64-0.66 drag (-0.54R/10). Good fit for a live web board that needs activity.
+CONFIDENCE_THRESHOLD 0.66 -> 0.64 (.env + live API). Two-book model: REAL >=0.64,
+shadow 0.62-0.64. Loss rails unchanged.
+
 ## 2026-07-20 — Real-book floor lowered 0.72 -> 0.66 (evidence-based, unfreezes trading)
 
 0.72 was structurally unreachable for entries: 0 stock/crypto BUY signals hit 0.72

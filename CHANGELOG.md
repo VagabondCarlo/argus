@@ -125,6 +125,22 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-19 (night) — GitHub Pages deploy pipeline: built, tested, DORMANT
+
+Public terminal launch is now a 5-minute switch, staged and waiting.
+
+- **ops/deploy_pages.sh** — force-pushes ONLY public/index.html + .nojekyll to an
+  orphan gh-pages branch via a throwaway temp repo (main history untouched, single
+  commit each time, nothing accumulates). Verified against a local bare repo —
+  exactly 2 files, 1 commit, nothing sent to GitHub.
+- **ops/com.argus.pages.plist** — auto-redeploy every 10 min; shipped DORMANT
+  (not in LaunchAgents, not loaded).
+- **ops/GO_LIVE.md** — exact flip: deploy → enable Pages → load auto-refresh →
+  optional custom domain; plus one-line takedown.
+- State: gh-pages branch does NOT exist on origin; Pages NOT enabled; nothing
+  public. The terminal keeps generating privately (com.argus.terminal). Go-live
+  is Mike's call.
+
 ## 2026-07-19 (night) — Live signal terminal: data-driven + multi-source news
 
 - **public_feed.py** — the single security boundary for the public web feed.

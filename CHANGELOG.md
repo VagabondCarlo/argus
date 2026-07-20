@@ -125,6 +125,24 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-20 — Real-book floor lowered 0.72 -> 0.66 (evidence-based, unfreezes trading)
+
+0.72 was structurally unreachable for entries: 0 stock/crypto BUY signals hit 0.72
+in 3 days (max BUY confidence 0.68), so the real book had taken 0 trades since the
+floor was restored — a track-record product whose record could not grow. The shadow
+book, built for exactly this call, gave the evidence: the 0.66-0.72 band is
+PROFITABLE in live forward-testing (+3.06R over 7 signals), while 0.62-0.66 is
+negative (-1.55R).
+
+- CONFIDENCE_THRESHOLD 0.72 -> 0.66 (.env + live API). Real trades now execute in the
+  0.66-0.72 band the data proves profitable; the losing 0.62-0.66 sub-band stays
+  excluded (shadow-only). Loss rails (-$15/day, -$30/week) remain the risk budget.
+- Two-book model updated: REAL >=0.66, SHADOW 0.62-0.66.
+- Rationale tie-in: with the display pivoted to a live web interface, an unfreezing
+  of execution is needed so the board (and record) actually accumulate.
+- Note: chose 0.66 (profitable edge) over a 0.62 floor, which would have added the
+  proven-losing sub-band to the public track-record board.
+
 ## 2026-07-19 (night) — Public board shows only what Argus trades
 
 Mike's call after spotting a 77% silver signal on the board: metals/forex are

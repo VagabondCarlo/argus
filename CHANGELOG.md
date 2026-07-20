@@ -125,6 +125,24 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-20 — EFFECTIVENESS: trend veto (biggest edge fix yet)
+
+Ran three backtests to make the system actually effective, not just tuned:
+1. Exit optimizer (100 signals): 1:1 reward:risk is already optimal — wider targets
+   collapse win rate faster than they add reward, tighter gives it back. Don't touch exits.
+2. Edge analysis: the edge concentrates at >=0.66 confidence (floor already there).
+3. Setup analysis (n=98) — THE finding: the system's main bleeder was COUNTER-TREND
+   entries. BUY into a downtrend won 26% (n=57!); BUY with the trend won 71%. SELL with
+   trend 62% vs 40% against. Baseline win rate 37%.
+
+Fix: **trend veto** in the scorer — never enter against the EMA trend. BUY requires
+EMA not down, SELL requires EMA not up. Counter-trend setups drop to WATCH (still
+shadow-scored, not traded). Backtest implies with-trend win rate ~65% vs 37% baseline —
+fewer trades, much higher quality. Fits the mandate: effective + minimal risk.
+
+Also: web terminal trade-line now reads the LIVE threshold (was hardcoded 72) so the
+app always matches the system — done in conjunction with the config changes.
+
 ## 2026-07-20 — Edge analysis → floor settled at 0.66 (data, not preference)
 
 Replayed 74 recent v2 signals against real price history (edge_analysis.py) and

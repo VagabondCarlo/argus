@@ -49,12 +49,19 @@ def score_snapshot(snap: dict) -> dict:
     # a BUY/SELL, immediately hit the hard vetoes (volume, R/R) that WATCHes
     # bypass, and signal flow dropped to zero. The vetoes are the real quality
     # gate — flow comes from scanning more assets, not from weakening actions.
-    if buy_score >= sell_score and buy_score >= 0.15:
+    # TREND VETO — the single biggest edge fix (backtest July 20, n=98):
+    # counter-trend entries were the system's main bleeder. BUY into a
+    # downtrend won 26% (n=57); BUY with the trend won 71%. SELL with the
+    # trend won 62% vs 40% against. So never enter against the EMA trend —
+    # those setups drop to WATCH (still scored for the shadow book, not traded).
+    buy_ok = buy_score >= 0.15 and buy_score >= sell_score and ema != "down"
+    sell_ok = sell_score >= 0.15 and sell_score > buy_score and ema != "up"
+    if buy_ok:
         action = "BUY"
         conf = round(min(0.50 + buy_score, 0.82), 2)
         stop_loss = round(price - (1.0 * atr), 2)
         price_target = round(price + (1.0 * atr), 2)
-    elif sell_score > buy_score and sell_score >= 0.15:
+    elif sell_ok:
         action = "SELL"
         conf = round(min(0.50 + sell_score, 0.82), 2)
         stop_loss = round(price + (1.0 * atr), 2)

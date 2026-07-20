@@ -125,6 +125,20 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-20 — Edge analysis → floor settled at 0.66 (data, not preference)
+
+Replayed 74 recent v2 signals against real price history (edge_analysis.py) and
+cross-checked the shadow book. Both agree: the 0.64-0.66 slice loses (~33% win,
+negative R), and the edge turns real at >=0.66 (~100% win in-sample; small n but
+consistent across two independent samples). Confidence IS calibrated above 0.66.
+
+- CONFIDENCE_THRESHOLD 0.64 -> 0.66 (my call — Mike delegated: "be the expert,
+  minimal risk, make it work"). Removes the losing slice; keeps the winning band.
+- Other findings: crypto BUYs strongest; crypto SELLs ~coin-flip (and mostly skipped,
+  no-short); metals losing but not traded anyway (signal-only, off the board).
+- STOP TUNING NOW: 0.66 is the data-supported resting floor. Let it RUN and
+  accumulate real trades before any further change. Positions $50, rails intact.
+
 ## 2026-07-20 — Risk locked conservative (my call, per Mike: minimal risk)
 
 Executive decision — no more offloading sizing choices to Mike:

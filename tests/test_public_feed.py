@@ -19,6 +19,8 @@ def seeded(tmp_path, monkeypatch):
     db.save_signal("NVDA", "BUY", 0.74, 128.0, 118.0, "x", "stock", entry_price=120.0)
     db.save_signal("BAT-USD", "BUY", 0.65, 0.08, 0.08, "x", "crypto", entry_price=0.08)  # degenerate
     db.save_signal("SPY", "WATCH", 0.80, 600.0, 580.0, "x", "stock", entry_price=590.0)  # not actionable
+    db.save_signal("SI=F", "BUY", 0.77, 58.0, 55.0, "x", "metal", entry_price=56.0)  # signal-only asset
+    db.save_signal("EURUSD=X", "SELL", 0.75, 1.05, 1.09, "x", "forex", entry_price=1.07)  # signal-only
     import notifications.public_feed as pf
     return pf
 
@@ -43,6 +45,15 @@ def test_degenerate_signal_filtered(seeded):
 def test_watch_signals_excluded(seeded):
     payload = seeded.build_public_payload(include_news=False)
     assert "SPY" not in [s["ticker"] for s in payload["signals"]]
+
+
+def test_only_tradeable_assets_on_board(seeded):
+    """Metals/forex are signal-only — they must not appear as if tradeable."""
+    payload = seeded.build_public_payload(include_news=False)
+    assets = {s["asset_type"] for s in payload["signals"]}
+    assert assets <= {"stock", "crypto"}
+    tickers = [s["ticker"] for s in payload["signals"]]
+    assert "SI=F" not in tickers and "EURUSD=X" not in tickers
 
 
 def test_high_conviction_flag(seeded):

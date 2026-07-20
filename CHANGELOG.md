@@ -125,6 +125,20 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-19 (night) — Public board shows only what Argus trades
+
+Mike's call after spotting a 77% silver signal on the board: metals/forex are
+signal-only (no broker route), so showing them as high-conviction picks implied
+trades the system never takes — a credibility gap against the honest-ledger pitch.
+
+- Public terminal now filters to tradeable asset classes only (stock + crypto).
+  Every card is a trade Argus would actually place, and the board universe now
+  matches the track record. Metals/forex still scanned and scored internally
+  (shadow/analytics), just not shown as if actionable.
+- Considered adding metals execution via ETF proxies (GLD/SLV/CPER/PPLT/PALL are
+  Alpaca-tradable + fractionable) — deferred; chose the honest filter for now.
+- Test added (suite 45): board excludes non-tradeable assets.
+
 ## 2026-07-19 (night) — No-delay policy: free feed tracks live every 5 min
 
 Mike's product call: never delay information delivery — profitable clients make a

@@ -57,17 +57,26 @@ def _held(a: str, b: str) -> str:
         return "—"
 
 
+# Only asset classes Argus actually executes appear on the public board, so
+# every card is a trade the system would take — and the board matches the
+# track record. Metals/forex are signal-only (no broker route) and are excluded
+# to avoid implying a 77%-conviction pick the system never trades.
+TRADEABLE_ASSETS = ("stock", "crypto")
+
+
 def _live_signals(conn) -> list[dict]:
     cutoff = f"datetime('now','-{DISPLAY_WINDOW_HOURS} hours')"
+    placeholders = ",".join("?" * len(TRADEABLE_ASSETS))
     rows = conn.execute(f"""
         SELECT ticker, action, confidence, asset_type, entry_price, stop_loss, price_target
         FROM signals
         WHERE action IN ('BUY','SELL')
           AND confidence >= ?
           AND executed = 0
+          AND asset_type IN ({placeholders})
           AND generated_at >= {cutoff}
         ORDER BY confidence DESC
-    """, (DISPLAY_MIN_CONF,)).fetchall()
+    """, (DISPLAY_MIN_CONF, *TRADEABLE_ASSETS)).fetchall()
 
     out, seen = [], set()
     for r in rows:

@@ -14,7 +14,10 @@ tests/test_public_feed.py:
 
 If a field isn't explicitly built into the payload below, it does not go out.
 """
+import json
 import logging
+import os
+import time
 from datetime import datetime, timezone
 
 from shared.config import config
@@ -254,6 +257,32 @@ def _news_for(tickers: list[str]) -> list[dict]:
     return [results[tk] for tk in tickers if tk in results]  # preserve order
 
 
+_NEWS_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "public", "news_cache.json")
+_NEWS_TTL = 15 * 60  # headlines are context, not the signal — refetch every 15 min
+
+
+def _cached_news(tickers: list[str]) -> list[dict]:
+    """Cache headlines so the 5-min page refresh doesn't hammer news sources.
+    Signals and the record are always live; only the news column is cached.
+    Refetches when the cache is stale OR the displayed tickers change."""
+    try:
+        with open(_NEWS_CACHE) as f:
+            c = json.load(f)
+        if time.time() - c["ts"] < _NEWS_TTL and c["tickers"] == tickers:
+            return c["news"]
+    except (FileNotFoundError, KeyError, ValueError):
+        pass
+    news = _news_for(tickers)
+    try:
+        os.makedirs(os.path.dirname(_NEWS_CACHE), exist_ok=True)
+        with open(_NEWS_CACHE, "w") as f:
+            json.dump({"ts": time.time(), "tickers": tickers, "news": news}, f)
+    except OSError as e:
+        logger.warning(f"news cache write failed: {e}")
+    return news
+
+
 def build_public_payload(include_news: bool = True) -> dict:
     with get_conn() as conn:
         signals = _live_signals(conn)
@@ -281,5 +310,5 @@ def build_public_payload(include_news: bool = True) -> dict:
     if include_news:
         display_tickers = [s["ticker"] for s in signals][:6] \
             or [c["ticker"] for c in closed][:3]
-        payload["news"] = _news_for(display_tickers)
+        payload["news"] = _cached_news(display_tickers)
     return payload

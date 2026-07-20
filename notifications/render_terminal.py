@@ -219,7 +219,7 @@ def render(payload: dict) -> str:
       </div>
       <div class="tagline">Autonomous signal intelligence · never sleeps</div>
     </div>
-    <div class="status"><span class="pulse"></span> Live · {_e(gen_str)}</div>
+    <div class="status"><span class="pulse"></span> Live · updates every 5 min · {_e(gen_str)}</div>
   </header>
   <hr class="rule">
 
@@ -268,10 +268,10 @@ def render(payload: dict) -> str:
 {news}
   <footer>
     <div class="pro">
-      <div class="lead"><b>Argus Pro</b> — exact entries and profit targets, real-time alerts the moment a setup fires, and the full ≥72% conviction feed. The free board runs on a delay.</div>
+      <div class="lead"><b>Argus Pro</b> — exact entries, profit targets, and an instant push the moment a setup fires, so you act without watching the board. Same signals as here, no delay — Pro just hands you the full trade and the alert.</div>
       <div class="cta">Join the waitlist</div>
     </div>
-    <p style="margin-top:18px"><b>Educational only — not financial advice.</b> Argus is an autonomous algorithmic system, not a licensed advisor. Signals are probabilities, not recommendations; every entry carries risk of total loss. Suggested stops are shown so you can manage your own risk — the decision to enter is entirely yours. News links are third-party sources shown for context, not endorsements. Free feed is delayed. Past performance does not guarantee future results.</p>
+    <p style="margin-top:18px"><b>Educational only — not financial advice.</b> Argus is an autonomous algorithmic system, not a licensed advisor. Signals are probabilities, not recommendations; every entry carries risk of total loss. Suggested stops are shown so you can manage your own risk — the decision to enter is entirely yours. News links are third-party sources shown for context, not endorsements. The board updates about every 5 minutes. Past performance does not guarantee future results.</p>
     <p style="margin-top:12px;color:#454b58">◉ ARGUS · paper-trading track record · generated {_e(gen_str)}</p>
   </footer>
 </div>"""

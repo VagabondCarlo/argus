@@ -12,3 +12,4 @@ docs/setup-log.md
 data/
 maintenance.flag
 public/
+public/news_cache.json

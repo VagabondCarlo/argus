@@ -125,6 +125,20 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-19 (night) — No-delay policy: free feed tracks live every 5 min
+
+Mike's product call: never delay information delivery — profitable clients make a
+profitable app, so users get shown data at full speed. Pro earns its price on
+completeness and convenience, not by handicapping the free feed.
+
+- Terminal regenerates every 5 min (was 10; matches the market-hours scan cadence).
+- No artificial delay anywhere. Removed all "free feed is delayed" copy; free board
+  is labeled "Live · updates every 5 min". Pro value restated: exact entry + target
+  + instant push (act without watching the board) — same signals, no delay.
+- News fetch decoupled from the 5-min refresh via a 15-min file cache (public/
+  news_cache.json, gitignored) so faster page refresh doesn't hammer news sources;
+  signals and the record are always live, only the news column is cached.
+
 ## 2026-07-19 (night) — GitHub Pages deploy pipeline: built, tested, DORMANT
 
 Public terminal launch is now a 5-minute switch, staged and waiting.

@@ -125,7 +125,7 @@ def _closed_trades(conn) -> list[dict]:
     } for r in rows]
 
 
-def _calibration(conn) -> list[dict]:
+def _calibration(conn, threshold: float) -> list[dict]:
     rows = conn.execute("""
         SELECT CASE WHEN confidence >= 0.72 THEN '0.72 +'
                     WHEN confidence >= 0.66 THEN '0.66 – 0.72'
@@ -136,15 +136,18 @@ def _calibration(conn) -> list[dict]:
         FROM virtual_outcomes GROUP BY band
     """).fetchall()
     shadow = {r["band"]: dict(r) for r in rows}
-    out = [{"band": "0.72 +", "n": None, "wins": None, "total_r": None, "status": "traded"}]
-    for b in ("0.66 – 0.72", "0.62 – 0.66"):
-        r = shadow.get(b)
+    # A band is "traded" if its lower bound is at/above the live floor — so the
+    # table always matches the actual system, whatever the threshold is set to.
+    bands = [("0.72 +", 0.72), ("0.66 – 0.72", 0.66), ("0.62 – 0.66", 0.62)]
+    out = []
+    for label, lower in bands:
+        r = shadow.get(label)
         out.append({
-            "band": b,
+            "band": label,
             "n": r["n"] if r else 0,
             "wins": r["wins"] if r else 0,
             "total_r": r["total_r"] if r else 0.0,
-            "status": "shadow",
+            "status": "traded" if lower >= threshold else "shadow",
         })
     return out
 
@@ -293,10 +296,11 @@ def _cached_news(tickers: list[str]) -> list[dict]:
 
 
 def build_public_payload(include_news: bool = True) -> dict:
+    threshold = config.CONFIDENCE_THRESHOLD
     with get_conn() as conn:
         signals = _live_signals(conn)
         closed = _closed_trades(conn)
-        calibration = _calibration(conn)
+        calibration = _calibration(conn, threshold)
         open_count = conn.execute(
             "SELECT COUNT(*) c FROM trades WHERE status='open'"
         ).fetchone()["c"]
@@ -304,6 +308,7 @@ def build_public_payload(include_news: bool = True) -> dict:
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "threshold": threshold,
         "record": {
             "wins": record["wins"], "losses": record["losses"],
             "total_trades": record["total_trades"],

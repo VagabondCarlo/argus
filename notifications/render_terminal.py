@@ -13,24 +13,24 @@ from datetime import datetime, timezone
 from notifications.public_feed import build_public_payload
 
 
-def _bar(conf: float) -> str:
+def _bar(conf: float, thr_pct: int) -> str:
     pct = int(round(conf * 100))
     return (f'<div class="bar"><i style="width:{pct}%"></i>'
-            f'<span class="thresh" style="left:72%"></span></div>')
+            f'<span class="thresh" style="left:{thr_pct}%"></span></div>')
 
 
 def _e(s) -> str:
     return html.escape(str(s), quote=True)
 
 
-def _signal_card(s: dict) -> str:
+def _signal_card(s: dict, thr_pct: int) -> str:
     side = "buy" if s["action"] == "BUY" else "sell"
-    conv = ' <span class="hc">◉ conviction</span>' if s["high_conviction"] else ""
+    conv = ' <span class="hc">◉ trade line</span>' if s["high_conviction"] else ""
     return f"""      <div class="card">
         <div class="top"><span class="tk">{_e(s['ticker'])}</span><span class="side {side}">{_e(s['action'])}</span></div>
         <div class="conf">Confidence {int(round(s['confidence']*100))}%{conv}</div>
-        {_bar(s['confidence'])}
-        <div class="cbar-l"><span>50%</span><span>72% conviction line</span></div>
+        {_bar(s['confidence'], thr_pct)}
+        <div class="cbar-l"><span>50%</span><span>{thr_pct}% trade line</span></div>
         <div class="levels">
           <div class="lv"><span>Sugg. stop</span><b>{_e(s['stop'])}</b></div>
           <div class="lv lock"><span>Entry</span><b>PRO →</b></div>
@@ -50,14 +50,16 @@ def _closed_row(t: dict) -> str:
 
 
 def _calib_row(c: dict) -> str:
-    if c["status"] == "traded":
-        return ('      <tr><td class="band">0.72 +</td><td>—</td><td>—</td><td>—</td>'
-                '<td class="traded">◉ TRADED LIVE</td></tr>')
+    status = ('<span class="traded">◉ traded live</span>' if c["status"] == "traded"
+              else '<span class="meta">shadow only</span>')
+    if not c["n"]:
+        return (f'      <tr><td class="band">{_e(c["band"])}</td><td>—</td><td>—</td>'
+                f'<td>—</td><td>{status}</td></tr>')
     r = c["total_r"] or 0
     rcls = "pos" if r >= 0 else "neg"
     rsign = "+" if r >= 0 else "−"
     return (f'      <tr><td class="band">{_e(c["band"])}</td><td>{c["n"]}</td><td>{c["wins"]}</td>'
-            f'<td class="{rcls}">{rsign}{abs(r):.1f}R</td><td class="meta">shadow only</td></tr>')
+            f'<td class="{rcls}">{rsign}{abs(r):.1f}R</td><td>{status}</td></tr>')
 
 
 def _news_block(news: list[dict]) -> str:
@@ -100,12 +102,13 @@ def render(payload: dict) -> str:
     rec_line = (f'{rec["wins"]}W · {rec["losses"]}L' if total else "building")
     gen = datetime.fromisoformat(payload["generated_at"]).astimezone(timezone.utc)
     gen_str = gen.strftime("%b %d · %H:%M UTC")
+    thr_pct = int(round(payload.get("threshold", 0.66) * 100))
 
     hc = payload["high_conviction_count"]
     if payload["signals"]:
-        cards = "\n".join(_signal_card(s) for s in payload["signals"])
+        cards = "\n".join(_signal_card(s, thr_pct) for s in payload["signals"])
         patient = "" if hc else f"""      <div class="patient"><span class="big">0</span>
-        <span>high-conviction signals (<b>≥72%</b>) live right now. Argus only <i>trades</i> its strongest setups and will sit in cash rather than force one. Below is the current watchlist — weaker probabilities, shown honestly.</span>
+        <span>signals above the <b>≥{thr_pct}%</b> trade line right now. Argus only <i>trades</i> its strongest setups and will sit in cash rather than force one. Below is the current watchlist — weaker probabilities, shown honestly.</span>
       </div>"""
     else:
         cards, patient = "", '      <div class="patient"><span class="big">·</span><span>Quiet board — no setups worth showing this moment. That\'s information too.</span></div>'
@@ -257,7 +260,7 @@ def render(payload: dict) -> str:
   <section>
     <div class="eyebrow"><span class="n">04</span>Calibration</div>
     <h2>Does the probability mean anything?</h2>
-    <p class="sub">The number nobody else publishes: how each confidence band actually resolves against real prices — including the signals we chose <b>not</b> to trade. This is how we set the 72% line.</p>
+    <p class="sub">The number nobody else publishes: how each confidence band actually resolves against real prices — including the signals we chose <b>not</b> to trade. This is how we set the {thr_pct}% trade line.</p>
     <div class="tblwrap"><table class="calib">
       <thead><tr><th>Confidence band</th><th>Signals</th><th>Won</th><th>Net R</th><th>Status</th></tr></thead>
       <tbody>

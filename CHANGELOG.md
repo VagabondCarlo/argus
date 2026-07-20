@@ -125,6 +125,30 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-19 (night) — Live signal terminal: data-driven + multi-source news
+
+- **public_feed.py** — the single security boundary for the public web feed.
+  build_public_payload() emits only public-safe fields: live signals show
+  direction + probability + suggested STOP only (never entry/target — the Pro
+  gate); closed trades show historical entry/exit (settled track record);
+  calibration by band from the shadow book. Degenerate signals (collapsed
+  levels, e.g. sub-dollar rounding) are dropped. No secrets/keys/IPs can leak —
+  if a field isn't explicitly built in, it doesn't go out.
+- **render_terminal.py** — data-driven version of the approved terminal, writes
+  self-contained public/index.html (no external assets; safe as a static file).
+- **Multi-source news per pick** (Mike's ask for consensus): each displayed
+  ticker pulls headlines from Google News RSS (Reuters, Bloomberg, CoinDesk,
+  WSJ, CNBC, ...) + Yahoo aggregation, deduped and source-diverse, each headline
+  labeled with its publisher, plus a per-ticker source count. Futures/metals
+  symbols mapped to commodity names (SI=F → "silver price") to avoid collisions
+  (SI matched Sports Illustrated). News failures degrade gracefully, never break
+  generation.
+- **6 leak-prevention tests** (suite now 44): prove entry/target/secrets can
+  never appear in the payload or rendered HTML regardless of DB contents.
+- Regenerates every 10 min via launchd (com.argus.terminal → public/index.html,
+  gitignored). Serving/hosting is a separate Mike decision (kept off the public
+  internet until then; Mini never exposed).
+
 ## 2026-07-19 (afternoon) — Product: signal terminal + presentation decisions
 
 - **Signal terminal prototype built and approved** ("honest quant terminal" direction):

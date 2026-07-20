@@ -125,6 +125,17 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-20 — Risk locked conservative (my call, per Mike: minimal risk)
+
+Executive decision — no more offloading sizing choices to Mike:
+- Position size halved 0.20 -> 0.10 ($50/position). Real risk per trade ~$1.50-5
+  (the stop governs loss, not position size — a stopped $100 trade lost $2-3, never $100).
+- Floor locked at 0.64 (buffer 0.64-0.66), data-supported net +2.52R in shadow.
+- Max 3 positions, loss rails -$15/day / -$30/week unchanged as backstop.
+- Posture: trade SMALL while the edge is unproven; scale up only once analysis proves it.
+- Net book to date: +$4.26 (1W-2L). Not "nothing but losses" — but sizing now matches
+  a prove-it-first stance.
+
 ## 2026-07-20 — Floor set to 0.64 (Mike's call, data-confirmed net-positive)
 
 Mike chose 0.64 as the middle between my 0.66 recommendation and a 0.62 floor.

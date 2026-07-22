@@ -3,8 +3,14 @@ import pandas as pd
 import ta
 import logging
 import os
+import time
 
 logger = logging.getLogger(__name__)
+
+# yfinance logs "possibly delisted; no price data" at ERROR for what are just
+# intermittent empty responses under concurrency — silence that misleading noise;
+# fetch_historical handles real failures with retries below.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 WATCHLIST = [
     "AAPL", "TSLA", "NVDA", "MSFT", "AMD",
@@ -45,19 +51,27 @@ def get_realtime_price(ticker: str) -> float | None:
     return None
 
 
-def fetch_historical(ticker: str, period: str = "90d", interval: str = "1d") -> pd.DataFrame | None:
-    try:
-        df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
-        if df.empty:
-            return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col[0].lower() for col in df.columns]
-        else:
-            df.columns = [c.lower() for c in df.columns]
-        return df
-    except Exception as e:
-        logger.error(f"Failed to fetch {ticker}: {e}")
-        return None
+def fetch_historical(ticker: str, period: str = "90d", interval: str = "1d",
+                     retries: int = 3) -> pd.DataFrame | None:
+    """Fetch OHLCV with retry. yfinance intermittently returns an empty frame
+    for a live ticker under concurrent load; a short backoff-and-retry recovers
+    it, so one flaky response no longer drops the ticker for the whole scan."""
+    for attempt in range(retries):
+        try:
+            df = yf.download(ticker, period=period, interval=interval,
+                             progress=False, auto_adjust=True)
+            if df is not None and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = [col[0].lower() for col in df.columns]
+                else:
+                    df.columns = [c.lower() for c in df.columns]
+                return df
+        except Exception as e:
+            logger.warning(f"fetch {ticker} attempt {attempt + 1}/{retries}: {e}")
+        if attempt < retries - 1:
+            time.sleep(0.6 * (attempt + 1))  # 0.6s, 1.2s backoff
+    logger.warning(f"fetch {ticker}: no data after {retries} attempts (skipping this cycle)")
+    return None
 
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:

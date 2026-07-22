@@ -9,7 +9,7 @@ venv/
 logs/
 *.log
 docs/setup-log.md
-data/
+/data/
 maintenance.flag
 public/
 public/news_cache.json

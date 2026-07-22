@@ -125,6 +125,17 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-22 — Fixes + unstarve (stock feed, floor 0.66->0.64)
+
+- Fixed yfinance intermittent-empty bug that silently killed the STOCK feed for days
+  (live large-caps mislabeled 'delisted', dropped for whole scan cycles). fetch_historical
+  now retries 3x with backoff; noise silenced. Executor/Alpaca APIs were never affected.
+- Unstarved: over 3 days the system took ONE trade — stock feed was dead + trend veto
+  (kept, it's the quality gate) + 0.66 floor left only 3 eligible signals in 3 days.
+  Floor 0.66 -> 0.64: eligible 3 -> 12 (4x). $50 positions, rails unchanged.
+- Tracked analyst/data code in git (data/ ignore was hiding a code dir).
+- Web terminal trade-line synced to 64% in the same pass.
+
 ## 2026-07-20 — EFFECTIVENESS: trend veto (biggest edge fix yet)
 
 Ran three backtests to make the system actually effective, not just tuned:

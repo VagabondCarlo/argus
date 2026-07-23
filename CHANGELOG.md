@@ -125,6 +125,15 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-23 — Web terminal: live open-positions panel
+
+Mike couldn't see the open YFI trade on the site — the page only showed CLOSED
+trades + an 'Open now' count, never the live holding. Added a 'Live positions'
+section (02): each open position marked to market — direction (LONG/SHORT), entry,
+current price, live unrealized P&L, held time — refreshed every 5 min from Alpaca.
+Entry is historical (trade already placed), so it's on-brand transparency, not a
+leaked edge. Sections renumbered. Leak tests still green.
+
 ## 2026-07-22 — Fixes + unstarve (stock feed, floor 0.66->0.64)
 
 - Fixed yfinance intermittent-empty bug that silently killed the STOCK feed for days

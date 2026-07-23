@@ -125,6 +125,45 @@ def _closed_trades(conn) -> list[dict]:
     } for r in rows]
 
 
+def _open_positions(conn) -> list[dict]:
+    """Currently-held positions with live P&L. Entry is historical (the trade is
+    already placed), so showing it is on-brand transparency, not a leaked edge —
+    'here's exactly what we hold right now and how it's doing.'"""
+    rows = conn.execute("""
+        SELECT s.ticker, s.action, s.confidence, t.fill_price, t.executed_at
+        FROM trades t JOIN signals s ON t.signal_id = s.id
+        WHERE t.status = 'open'
+        ORDER BY t.executed_at DESC
+    """).fetchall()
+    if not rows:
+        return []
+    live = {}
+    try:
+        from executor.gateway.alpaca import get_open_positions
+        for p in get_open_positions():
+            live[_norm(p["ticker"])] = p
+    except Exception as e:
+        logger.warning(f"open-positions live fetch failed: {e}")
+    now = datetime.now(timezone.utc).isoformat()
+    out = []
+    for r in rows:
+        p = live.get(_norm(r["ticker"]))
+        cur = p["current_price"] if p else None
+        pnl = p["unrealized_pnl"] if p else None
+        is_short = (p["qty"] < 0) if p else (r["action"] == "SELL")
+        out.append({
+            "ticker": r["ticker"],
+            "action": "SHORT" if is_short else "LONG",
+            "confidence": round(r["confidence"], 2),
+            "entry": _fmt_price(r["fill_price"]),
+            "current": _fmt_price(cur) if cur is not None else "—",
+            "pnl": round(pnl, 2) if pnl is not None else None,
+            "up": bool(pnl is not None and pnl >= 0),
+            "held": _held(r["executed_at"], now),
+        })
+    return out
+
+
 def _calibration(conn, threshold: float) -> list[dict]:
     rows = conn.execute("""
         SELECT CASE WHEN confidence >= 0.72 THEN '0.72 +'
@@ -300,6 +339,7 @@ def build_public_payload(include_news: bool = True) -> dict:
     with get_conn() as conn:
         signals = _live_signals(conn)
         closed = _closed_trades(conn)
+        open_positions = _open_positions(conn)
         calibration = _calibration(conn, threshold)
         open_count = conn.execute(
             "SELECT COUNT(*) c FROM trades WHERE status='open'"
@@ -316,6 +356,7 @@ def build_public_payload(include_news: bool = True) -> dict:
             "total_pnl": round(record["total_pnl"], 2),
         },
         "open_count": open_count,
+        "open_positions": open_positions,
         "signals": signals,
         "high_conviction_count": sum(1 for s in signals if s["high_conviction"]),
         "closed_trades": closed,

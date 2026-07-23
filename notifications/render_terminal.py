@@ -49,6 +49,20 @@ def _closed_row(t: dict) -> str:
       </div>"""
 
 
+def _open_row(p: dict) -> str:
+    side = "sell" if p["action"] == "SHORT" else "buy"
+    if p["pnl"] is None:
+        pnl_html = '<span class="meta">live…</span>'
+    else:
+        cls = "pos" if p["up"] else "neg"
+        sign = "+" if p["pnl"] >= 0 else "−"
+        pnl_html = f'<span class="pnl {cls}" style="font-size:15px">{sign}${abs(p["pnl"]):.2f}</span>'
+    return f"""      <div class="row">
+        <div class="lead"><span class="tk">{_e(p['ticker'])}</span><span class="side {side}">{_e(p['action'])}</span><span class="meta">{int(round(p['confidence']*100))}% · held {_e(p['held'])}</span></div>
+        <div class="pnl"><div>{pnl_html}</div><span class="px">${_e(p['entry'])} → ${_e(p['current'])} <span class="livedot">●</span> live</span></div>
+      </div>"""
+
+
 def _calib_row(c: dict) -> str:
     status = ('<span class="traded">◉ traded live</span>' if c["status"] == "traded"
               else '<span class="meta">shadow only</span>')
@@ -84,7 +98,7 @@ def _news_block(news: list[dict]) -> str:
         </div>""")
     return f"""
   <section>
-    <div class="eyebrow"><span class="n">05</span>The tape</div>
+    <div class="eyebrow"><span class="n">06</span>The tape</div>
     <h2>Read the story yourself</h2>
     <p class="sub">Recent headlines for what's on the board right now. We show you the setup and the probability — the news is so you can form your own view before you act. Links open at the source; we don't editorialize them.</p>
     <div class="news">
@@ -115,6 +129,19 @@ def render(payload: dict) -> str:
 
     closed = "\n".join(_closed_row(t) for t in payload["closed_trades"]) \
         or '      <div class="row"><div class="lead"><span class="meta">No closed trades yet.</span></div><div></div></div>'
+    open_pos = payload.get("open_positions", [])
+    open_section = ""
+    if open_pos:
+        open_rows = "\n".join(_open_row(p) for p in open_pos)
+        open_section = f"""
+  <section>
+    <div class="eyebrow"><span class="n">02</span>Open now</div>
+    <h2>Live positions</h2>
+    <p class="sub">What Argus is holding this moment, marked to the market. Skin in the game, updated every 5 minutes.</p>
+    <div class="rows">
+{open_rows}
+    </div>
+  </section>"""
     calib = "\n".join(_calib_row(c) for c in payload["calibration"])
     news = _news_block(payload.get("news", []))
 
@@ -169,6 +196,7 @@ def render(payload: dict) -> str:
   .meta{{color:var(--faint); font-size:12px; font-variant-numeric:tabular-nums}}
   .pnl{{font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; text-align:right}}
   .pnl .px{{display:block; font-size:11px; color:var(--faint); font-weight:400}}
+  .livedot{{color:var(--up); font-size:9px; vertical-align:middle}}
   .patient{{display:flex; gap:12px; align-items:center; padding:14px 16px; border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:8px; background:var(--panel); margin-bottom:16px; font-size:13px}}
   .patient .big{{font-size:20px; font-weight:700; color:var(--accent)}}
   .cards{{display:grid; grid-template-columns:1fr 1fr; gap:12px}}
@@ -237,9 +265,9 @@ def render(payload: dict) -> str:
     </div>
     <div class="honest">Most signal services advertise <b>75–96% win rates</b> independent tracking can't reproduce. We'd rather show a real record than a fake one. Paper account, live execution — the record is the pitch.</div>
   </section>
-
+{open_section}
   <section>
-    <div class="eyebrow"><span class="n">02</span>Closed trades</div>
+    <div class="eyebrow"><span class="n">03</span>Closed trades</div>
     <h2>Settled positions</h2>
     <p class="sub">Most recent first. Confidence is the score the system held at entry.</p>
     <div class="rows">
@@ -248,7 +276,7 @@ def render(payload: dict) -> str:
   </section>
 
   <section>
-    <div class="eyebrow"><span class="n">03</span>Live signals</div>
+    <div class="eyebrow"><span class="n">04</span>Live signals</div>
     <h2>What Argus sees right now</h2>
     <p class="sub">Direction and probability for every active setup, plus a suggested stop — the risk is never hidden. Exact entries and targets are the Pro layer. You judge whether a setup deserves your money.</p>
 {patient}
@@ -258,7 +286,7 @@ def render(payload: dict) -> str:
   </section>
 
   <section>
-    <div class="eyebrow"><span class="n">04</span>Calibration</div>
+    <div class="eyebrow"><span class="n">05</span>Calibration</div>
     <h2>Does the probability mean anything?</h2>
     <p class="sub">The number nobody else publishes: how each confidence band actually resolves against real prices — including the signals we chose <b>not</b> to trade. This is how we set the {thr_pct}% trade line.</p>
     <div class="tblwrap"><table class="calib">

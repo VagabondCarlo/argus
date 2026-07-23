@@ -43,6 +43,12 @@ class Config:
     # Crypto executes through Alpaca 24/7; forex/metals stay signal-only (no broker)
     CRYPTO_ENABLED = os.getenv("CRYPTO_ENABLED", "true").lower() == "true"
 
+    # Short selling — stocks only (Alpaca can't short crypto). OFF by default;
+    # flip to "true" in .env once reviewed. Unlocks SELL signals (currently
+    # discarded) — backtest: SELL-with-trend wins ~62%. Shorts use the same
+    # -3% hard cut and $50 sizing as longs; the position monitor is the stop.
+    SHORTING_ENABLED = os.getenv("SHORTING_ENABLED", "false").lower() == "true"
+
     # Telegram noise control. "digest": routine trade activity (entries, normal
     # exits, breakeven) is logged + DB-recorded and appears in the 3 daily
     # reports; pushes fire only for events needing a human (risk limits, failed

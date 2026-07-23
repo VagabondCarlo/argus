@@ -48,6 +48,7 @@ def ex(tmp_path, monkeypatch):
     monkeypatch.setattr(exmod, "send_sync_notification", lambda *a, **k: None)
     monkeypatch.setattr(exmod, "post_trade_close", lambda t: None)  # no Telegram from tests
     monkeypatch.setattr(exmod, "is_crypto_tradable", lambda t: True)
+    monkeypatch.setattr(exmod, "is_shortable", lambda t: True)
     monkeypatch.setattr(exmod, "_is_market_hours", lambda: True)
 
     # Pin the config this suite assumes, regardless of what .env says
@@ -60,9 +61,15 @@ def ex(tmp_path, monkeypatch):
 
 
 def _signal(ticker, action, conf, asset_type="stock", entry=100.0):
+    # Levels follow the action's direction, like the real scorer: a BUY's stop is
+    # below / target above; a SELL's stop is above / target below (short-shaped).
+    if action == "SELL":
+        target, stop = entry * 0.96, entry * 1.02
+    else:
+        target, stop = entry * 1.04, entry * 0.98
     db.save_signal(
         ticker=ticker, action=action, confidence=conf,
-        price_target=entry * 1.04, stop_loss=entry * 0.98,
+        price_target=target, stop_loss=stop,
         reasoning="integration test", asset_type=asset_type, entry_price=entry,
     )
 
@@ -288,3 +295,101 @@ def test_untradable_crypto_skipped(ex, monkeypatch):
     with db.get_conn() as conn:
         sig = conn.execute("SELECT executed FROM signals").fetchone()
     assert sig["executed"] == 1  # marked handled so it doesn't retry forever
+
+
+# ── Short selling (SHORTING_ENABLED) ─────────────────────────────────────────
+
+def test_short_entry_when_enabled(ex, monkeypatch):
+    """SELL + no position + shortable stock + flag on → opens a short (qty<0)."""
+    monkeypatch.setattr(ex.config, "SHORTING_ENABLED", True)
+    _signal("NVDA", "SELL", 0.74)                 # short-shaped: stop 102, target 96
+    ex.process_pending_signals()
+    assert len(ex.orders) == 1
+    assert ex.orders[0]["ticker"] == "NVDA" and ex.orders[0]["side"] == "SELL"
+    with db.get_conn() as conn:
+        t = conn.execute("SELECT quantity, status FROM trades").fetchone()
+    assert t["status"] == "open"
+    assert t["quantity"] < 0                       # short recorded with negative qty
+
+
+def test_short_blocked_when_flag_off(ex, monkeypatch):
+    monkeypatch.setattr(ex.config, "SHORTING_ENABLED", False)
+    _signal("NVDA", "SELL", 0.74)
+    ex.process_pending_signals()
+    assert ex.orders == []
+
+
+def test_short_blocked_for_crypto(ex, monkeypatch):
+    """Crypto is never shortable on Alpaca — a crypto SELL never opens a short."""
+    monkeypatch.setattr(ex.config, "SHORTING_ENABLED", True)
+    monkeypatch.setattr(ex, "is_shortable", lambda t: False)
+    _signal("BTC-USD", "SELL", 0.74, asset_type="crypto")
+    ex.process_pending_signals()
+    assert ex.orders == []
+
+
+def test_cover_short_on_buy(ex, monkeypatch):
+    """Full short round trip: SELL opens the short row, BUY covers THAT row."""
+    monkeypatch.setattr(ex.config, "SHORTING_ENABLED", True)
+    _signal("NVDA", "SELL", 0.74)
+    ex.process_pending_signals()                   # opens the short (creates the row)
+    assert len(ex.orders) == 1
+
+    monkeypatch.setattr(ex, "get_open_positions", lambda: [{
+        "ticker": "NVDA", "qty": -2.0, "avg_entry": 100.0,
+        "current_price": 96.0, "unrealized_pnl": 8.0, "asset_class": "stock",
+    }])
+    _signal("NVDA", "BUY", 0.74)
+    ex.process_pending_signals()                   # covers
+
+    assert ex.closes == ["NVDA"]
+    with db.get_conn() as conn:
+        rows = conn.execute("SELECT status, pnl FROM trades").fetchall()
+    assert len(rows) == 1                          # one round trip = one row
+    assert rows[0]["status"] == "closed"
+    assert rows[0]["pnl"] == pytest.approx(8.0)     # (96-100) * -2 = +8
+
+
+def test_short_dup_guard(ex, monkeypatch):
+    """SELL when already short → don't stack another short."""
+    monkeypatch.setattr(ex.config, "SHORTING_ENABLED", True)
+    monkeypatch.setattr(ex, "get_open_positions", lambda: [{
+        "ticker": "NVDA", "qty": -1.0, "avg_entry": 100.0,
+        "current_price": 100.0, "unrealized_pnl": 0.0, "asset_class": "stock",
+    }])
+    _signal("NVDA", "SELL", 0.74)
+    ex.process_pending_signals()
+    assert ex.orders == []
+
+
+def test_monitor_short_stop_fires_on_rise(ex, monkeypatch):
+    """A short's stop is ABOVE entry — the monitor closes when price RISES to it."""
+    monkeypatch.setattr(ex.config, "SHORTING_ENABLED", True)
+    _signal("NVDA", "SELL", 0.74, entry=100.0)     # stop 102, target 96
+    ex.process_pending_signals()                    # opens the short (records levels)
+    assert len(ex.orders) == 1
+    pos = {"ticker": "NVDA", "qty": -1.0, "avg_entry": 100.0,
+           "current_price": 102.3, "unrealized_pnl": -2.3, "asset_class": "stock"}
+    ex._evaluate_position(pos, market_open=True)
+    assert ex.closes == ["NVDA"]                    # stop hit on the rise
+
+
+def test_monitor_short_target_fires_on_fall(ex, monkeypatch):
+    """A short's target is BELOW entry — the monitor closes when price FALLS to it."""
+    monkeypatch.setattr(ex.config, "SHORTING_ENABLED", True)
+    _signal("NVDA", "SELL", 0.74, entry=100.0)     # target 96
+    ex.process_pending_signals()
+    pos = {"ticker": "NVDA", "qty": -1.0, "avg_entry": 100.0,
+           "current_price": 95.7, "unrealized_pnl": 4.3, "asset_class": "stock"}
+    ex._evaluate_position(pos, market_open=True)
+    assert ex.closes == ["NVDA"]                    # target hit on the fall
+
+
+def test_long_stop_unaffected_by_short_logic(ex):
+    """Regression: a normal long still stops on a fall, not a rise."""
+    _signal("AAPL", "BUY", 0.74, entry=100.0)      # long stop 98
+    ex.process_pending_signals()
+    pos = {"ticker": "AAPL", "qty": 1.0, "avg_entry": 100.0,
+           "current_price": 97.8, "unrealized_pnl": -2.2, "asset_class": "stock"}
+    ex._evaluate_position(pos, market_open=True)
+    assert ex.closes == ["AAPL"]

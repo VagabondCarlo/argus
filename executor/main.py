@@ -15,7 +15,7 @@ from shared.database import (
 from executor.gateway.alpaca import (
     get_account, get_latest_price, place_order, close_position,
     close_all_positions, get_open_positions, cancel_open_orders,
-    is_crypto_tradable, normalize_symbol,
+    is_crypto_tradable, is_shortable, normalize_symbol,
 )
 from executor.risk.manager import (
     check_trade_allowed, calculate_position_size, calculate_stop_loss, get_weekly_trade_count
@@ -154,14 +154,19 @@ def _evaluate_position(p: dict, market_open: bool):
     ticker = p["ticker"]
     entry = p["avg_entry"]
     current = p["current_price"]
-    pnl_pct = (current - entry) / entry * 100
+    is_short = p["qty"] < 0  # Alpaca reports shorts with negative qty
+    # For a short, profit is price falling — invert P&L and the stop/target sides.
+    pnl_pct = ((entry - current) if is_short else (current - entry)) / entry * 100
 
     levels = get_signal_levels_for_position(ticker) or {}
     stop = levels.get("stop_loss")
     target = levels.get("price_target")
+    # Long: stop below, target above. Short: stop above, target below.
+    stop_hit = stop and (current >= stop if is_short else current <= stop)
+    target_hit = target and (current <= target if is_short else current >= target)
 
-    if stop and current <= stop:
-        logger.info(f"STOP HIT: {ticker} ${current:.2f} <= stop ${stop:.2f} — closing")
+    if stop_hit:
+        logger.info(f"STOP HIT: {ticker} {'short' if is_short else 'long'} ${current:.2f} vs stop ${stop:.2f} — closing")
         ok, close_price, pnl = _monitor_close(p)
         if ok:
             notify(
@@ -170,8 +175,8 @@ def _evaluate_position(p: dict, market_open: bool):
             )
         return
 
-    if target and current >= target:
-        logger.info(f"TARGET HIT: {ticker} ${current:.2f} >= target ${target:.2f} — closing")
+    if target_hit:
+        logger.info(f"TARGET HIT: {ticker} {'short' if is_short else 'long'} ${current:.2f} vs target ${target:.2f} — closing")
         ok, close_price, pnl = _monitor_close(p)
         if ok:
             notify(
@@ -340,17 +345,25 @@ def process_pending_signals():
             seen.add(key)
             ranked.append(s)
 
+    # Classify each signal against current positions: a CLOSE frees a slot, an
+    # ENTRY consumes one. SELL closes a long OR opens a short; BUY covers a short
+    # OR opens a long. (Shorting stays behind SHORTING_ENABLED inside execute_signal.)
+    pos_by_key = {normalize_symbol(p["ticker"]): p for p in open_positions}
     slots = max(config.MAX_OPEN_POSITIONS - open_count, 0)
     for signal in ranked:
-        # SELLs always run — they close positions and free a slot
-        if signal["action"] == "SELL":
+        ex = pos_by_key.get(normalize_symbol(signal["ticker"]))
+        ex_short = bool(ex) and ex["qty"] < 0
+        ex_long = bool(ex) and ex["qty"] > 0
+        is_close = (signal["action"] == "SELL" and ex_long) or (signal["action"] == "BUY" and ex_short)
+        if is_close:
             if execute_signal(signal, account):
                 slots = min(slots + 1, config.MAX_OPEN_POSITIONS)
             continue
+        # Entry (BUY→long or SELL→short) — gated by available slots.
         if slots <= 0:
             logger.info(
                 f"Position limit: {config.MAX_OPEN_POSITIONS} slots full — "
-                f"skipping BUY {signal['ticker']} (conf {signal['confidence']:.0%})"
+                f"skipping {signal['action']} {signal['ticker']} (conf {signal['confidence']:.0%})"
             )
             continue
         if execute_signal(signal, account):
@@ -385,20 +398,29 @@ def _execute_signal_locked(signal: dict, account: dict) -> bool:
         None,
     )
 
-    if side == "BUY" and existing:
-        logger.info(f"Already holding {ticker} — skipping duplicate BUY")
+    existing_short = bool(existing) and existing["qty"] < 0
+    existing_long = bool(existing) and existing["qty"] > 0
+
+    # Same direction as an open position — don't stack.
+    if (side == "BUY" and existing_long) or (side == "SELL" and existing_short):
+        logger.info(f"Already {'long' if existing_long else 'short'} {ticker} — skipping duplicate {side}")
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
         return False
 
+    # SELL with no position → open a SHORT (stocks only, shortable, feature-gated).
     if side == "SELL" and not existing:
-        logger.info(f"No position in {ticker} — skipping SELL (no short selling)")
+        if config.SHORTING_ENABLED and asset_type == "stock" and is_shortable(ticker):
+            return _open_short(signal, account)
+        logger.info(f"No position in {ticker}; short unavailable — skipping SELL")
         with get_conn() as conn:
             conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
         return False
 
-    if side == "SELL" and existing:
-        logger.info(f"Closing position: {ticker} at ~${existing['current_price']:.2f}")
+    # Close a long (SELL) or cover a short (BUY) — one path; pnl uses the qty sign.
+    if existing and ((side == "SELL" and existing_long) or (side == "BUY" and existing_short)):
+        verb = "Covering short" if existing_short else "Closing position"
+        logger.info(f"{verb}: {ticker} at ~${existing['current_price']:.2f}")
         cancel_open_orders(existing["ticker"])  # resting stop/target legs hold the shares
         result = close_position(existing["ticker"])
         if "error" in result:
@@ -508,6 +530,94 @@ def _execute_signal_locked(signal: dict, account: dict) -> bool:
         f"_{signal['reasoning'][:120]}_"
     )
     logger.info(f"Executed: {side} {qty} {ticker} @ ${price} stop=${stop_price:.2f} target=${target_price:.2f}")
+    return True
+
+
+def _open_short(signal: dict, account: dict) -> bool:
+    """Open a short STOCK position. Isolated from the long path for safety.
+    The SELL signal's levels are already short-shaped: stop ABOVE entry, target
+    BELOW. The bracket covers with BUY legs; the position monitor (direction-aware)
+    is the backup stop. Reached only when SHORTING_ENABLED and the ticker is
+    Alpaca-shortable — gating is done by the caller.
+    """
+    ticker = signal["ticker"]
+    price = get_latest_price(ticker, "stock")
+    if not price:
+        logger.error(f"Cannot get price for short {ticker}")
+        return False
+
+    stop_price = signal.get("stop_loss") or price * 1.02   # above entry for a short
+    target_price = signal.get("price_target") or price * 0.98  # below entry
+
+    # Levels must be short-shaped, or the trade's risk is undefined — skip.
+    if not (stop_price > price > target_price):
+        logger.info(
+            f"Short {ticker}: levels not short-shaped (stop {stop_price}, px {price}, "
+            f"tgt {target_price}) — skipping"
+        )
+        with get_conn() as conn:
+            conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
+        return False
+
+    # Drift guard, inverted for a short: skip if price already rose through the
+    # stop, or already fell more than half the risk toward target.
+    entry_ref = signal.get("entry_price")
+    if entry_ref:
+        risk_dist = abs(stop_price - entry_ref)
+        if risk_dist > 0:
+            drift_reason = None
+            if price >= stop_price:
+                drift_reason = f"price ${price:.2f} already through short stop ${stop_price:.2f}"
+            elif entry_ref - price > 0.5 * risk_dist:
+                drift_reason = (
+                    f"price fell -${entry_ref - price:.2f} past half the ${risk_dist:.2f} "
+                    f"risk from planned entry ${entry_ref:.2f}"
+                )
+            if drift_reason:
+                logger.info(f"Drift guard (short): skipping {ticker} — {drift_reason}")
+                with get_conn() as conn:
+                    conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
+                return False
+
+    from executor.gateway.alpaca import calculate_position_size as alpaca_size
+    qty = alpaca_size(price, stop_price, "stock")
+    if qty <= 0:
+        logger.warning(f"Short size too small for {ticker} at ${price}")
+        return False
+
+    result = place_order(ticker, "SELL", qty, stop_price, take_profit_price=target_price,
+                         asset_type="stock")
+    if "error" in result:
+        logger.error(f"Short order failed: {result['error']}")
+        with get_conn() as conn:
+            conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
+        notify(f"❌ *Short failed*: {ticker}\n_{result['error']}_", critical=True)
+        return False
+
+    # Store qty NEGATIVE so the record marks it as a short (matches Alpaca's sign).
+    with get_conn() as conn:
+        conn.execute("UPDATE signals SET executed=1 WHERE id=?", (signal["id"],))
+        conn.execute("""
+            INSERT INTO trades (signal_id, order_id, fill_price, quantity, executed_at, status)
+            VALUES (?, ?, ?, ?, ?, 'open')
+        """, (signal["id"], result["order_id"], price, -qty, datetime.now(timezone.utc).isoformat()))
+        trade_date = datetime.now(timezone.utc).date().isoformat()
+        conn.execute("""
+            INSERT INTO daily_stats (trade_date, signals_executed)
+            VALUES (?, 1)
+            ON CONFLICT(trade_date) DO UPDATE SET signals_executed = signals_executed + 1
+        """, (trade_date,))
+
+    trades_left = config.MAX_TRADES_PER_WEEK - get_weekly_trade_count()
+    notify(
+        f"🔻 *Short Opened*\n\n"
+        f"SHORT {qty:.2f} shares of *{ticker}*\n"
+        f"Entry: ${price:.2f} | Stop: ${stop_price:.2f} | Target: ${target_price:.2f}\n"
+        f"Confidence: {signal['confidence']:.0%}\n"
+        f"Trades remaining this week: {trades_left}\n\n"
+        f"_{signal['reasoning'][:120]}_"
+    )
+    logger.info(f"Short opened: SELL {qty} {ticker} @ ${price} stop=${stop_price:.2f} target=${target_price:.2f}")
     return True
 
 

@@ -125,6 +125,24 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-23 — Short selling: built, tested, shipped OFF (ready to enable)
+
+The system was long-only, discarding every SELL signal (~half the flow). SELL-with-
+trend wins ~62% in backtest. Built shorting properly, isolated from the proven long
+path, behind SHORTING_ENABLED (default OFF).
+
+- _open_short(): short stock entry, drift guard inverted, qty stored negative.
+- execute_signal: BUY covers a short / SELL opens one (stocks only, shortable, gated);
+  crypto never shorts (Alpaca can't).
+- Position monitor _evaluate_position: direction-aware — a short's stop is ABOVE entry,
+  target BELOW; hard cut and breakeven use inverted P&L.
+- Slot accounting: a short-opening SELL consumes a slot; a covering BUY frees one.
+- is_shortable() gateway check (Alpaca shortable + easy-to-borrow, cached).
+- 8 new integration tests (short entry, cover round-trip, monitor stop-on-rise /
+  target-on-fall, flag-off, crypto-skip, dup-guard, long-path regression). Suite: 53 green.
+- SHIPPED OFF: SHORTING_ENABLED absent from .env → false. Enable = add the flag + restart,
+  at a market open with supervision. Nothing shorts until then.
+
 ## 2026-07-23 — Web terminal: live open-positions panel
 
 Mike couldn't see the open YFI trade on the site — the page only showed CLOSED

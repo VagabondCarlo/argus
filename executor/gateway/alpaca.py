@@ -274,6 +274,24 @@ def place_order(ticker: str, side: str, qty: float, stop_loss_price: float,
     }
 
 
+_shortable_cache: dict[str, bool] = {}
+
+
+def is_shortable(ticker: str) -> bool:
+    """True only for stocks Alpaca lists as shortable AND easy-to-borrow.
+    Crypto is never shortable on Alpaca. Cached per ticker."""
+    if ticker.endswith("-USD") or "/" in ticker:
+        return False
+    if ticker not in _shortable_cache:
+        try:
+            a = _get_trading().get_asset(ticker)
+            _shortable_cache[ticker] = bool(a.shortable and a.easy_to_borrow and a.tradable)
+        except Exception as e:
+            logger.warning(f"shortable check failed for {ticker}: {e}")
+            return False  # don't cache a failure
+    return _shortable_cache[ticker]
+
+
 def close_position(ticker: str) -> dict:
     """Close a position. Includes the actual fill price when the close order
     fills within a couple of seconds; callers fall back to their snapshot price."""

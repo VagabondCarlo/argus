@@ -125,6 +125,16 @@ The Minis now watch each other — no single machine is a blind spot.
 - Reverse SSH trust established (agent2 -> agent1, key-based, additive authorized_keys
   only — sshd config untouched per the June 24 lesson).
 
+## 2026-07-24 — Shorting ENABLED (Mike home, supervised)
+
+SHORTING_ENABLED flipped to true in .env + restart (verified config loaded True,
+healthy). System now opens short stock positions on shortable-stock SELL signals
+that clear the floor with the trend. Armed at 02:23 ET (market closed) → first
+short fires at the 9:30 open; crypto never shorts. Roughly doubles trade flow by
+using SELL signals previously discarded. Reversible: set false + restart.
+
+Also: YFI-USD long closed -.19 (held ~32h). Real book now 1W-3L, +.07.
+
 ## 2026-07-23 — Short selling: built, tested, shipped OFF (ready to enable)
 
 The system was long-only, discarding every SELL signal (~half the flow). SELL-with-

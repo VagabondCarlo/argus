@@ -1,0 +1,24 @@
+signals replayed: 163
+
+=== HOW FAR DID PRICE RUN (before stop)? — the key question ===
+  reached >= 1R favorable:   50%  (82 of 163)
+  reached >= 2R favorable:   28%  (45 of 163)
+  reached >= 3R favorable:   17%  (26 of 163)
+  reached >= 4R favorable:   10%  (16 of 163)
+
+  median MFE: 1.01R   mean MFE: 1.90R
+
+=== which conditions RUN farthest (mean MFE)? ===
+  with-trend (BUY+EMAup)       n=38   meanMFE=1.50R  reached3R=11%
+  with-trend (SELL+EMAdn)      n=34   meanMFE=2.63R  reached3R=24%
+  counter-trend                n=90   meanMFE=1.81R  reached3R=17%
+  high volume (>=1.5x)         n=5    meanMFE=1.47R  reached3R=20%
+  MACD-confirmed BUY           n=11   meanMFE=2.09R  reached3R=18%
+  MACD-confirmed SELL          n=27   meanMFE=2.75R  reached3R=22%
+  crypto                       n=121  meanMFE=1.80R  reached3R=15%
+  stock                        n=42   meanMFE=2.19R  reached3R=21%
+
+=== would a 3R-target strategy beat the 1R scalp? ===
+  target 1R: hit  50%  expectancy +0.01R/trade
+  target 2R: hit  28%  expectancy -0.17R/trade
+  target 3R: hit  17%  expectancy -0.34R/trade

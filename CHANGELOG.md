@@ -91,6 +91,65 @@ the v2 rebuild. Detailed day-by-day entries follow below.
 - Failover to Agent 2 is deliberately manual (typed GO) — two nodes + one brokerage
   account cannot safely auto-failover.
 
+## 2026-08-05 — v2 SHELVED (planned, data-driven — no durable trading edge found)
+
+- Stopped cleanly: closed final open position (YFI-USD, -$0.26), unloaded all
+  Argus launchd jobs on Agent 1 (watchdog, terminal, shadowbook) and Agent 2
+  (guardian, replica), killed the `argus_v2` tmux session. No crash, no incident.
+- Final v2 live book: 21 trades, 7W-14L (33% win rate), net **+$2.25 realized**.
+  Consistent with the Jul 29 checkpoint (10 trades, 20% win, +$0.83) that
+  triggered this decision — more sample, same conclusion: no durable edge.
+- Root verdict (unchanged since Jul 29): the technical-scalp premise is too
+  crowded for real retail alpha. The engineering (self-healing, two-Mini HA,
+  software stop enforcement, shadow book, guardrailed guest chat) held up
+  under live conditions; the strategy itself did not produce an edge.
+- Known-but-unfixed at shelve time (documented for the retrospective, not
+  fixed — frozen since Aug 1 per the clean-week rule): stock pipeline never
+  traded a single signal in its entire live run — `technical.py`'s
+  `score_snapshot()` sets stop/target at equal ATR distance both directions,
+  so risk_reward is mathematically always 1.0, and the stock path hard-vetoes
+  anything under 2.0. Only crypto ever really traded; forex/metals signals
+  generated but were never wired to execution. The "no edge" verdict is valid
+  for crypto only — stocks/forex/metals were never real experiments.
+- Archived: full code + `data/argus.db` copied as-is to
+  `~/argus_v2_backup_20260805/` on Agent 1 (integrity-checked, all 21 trades
+  intact) — same pattern as the v1 retirement (`~/argus_backup_20260707/`).
+  Nothing deleted. Tailscale/SSH access and the GitHub repo are untouched.
+
+### Final closeout pass (same day, post-shutdown — no live capital at risk)
+- **Fixed** the stock R/R=1.0 gate: `scorer.py`'s pre-LLM veto rejected every
+  stock BUY/SELL on `risk_reward < 2.0`, checked against `technical.py`'s naive
+  1:1 ATR stop/target — mathematically always exactly 1.0. This killed 100% of
+  stock signals before the LLM committee (which sets its own real, usually
+  asymmetric target/stop) ever got a turn. Removed the dead-on-arrival pre-LLM
+  check; the existing post-LLM final gate (R/R<1.5, real LLM-set levels) is
+  the gate that was always meant to do this job. 53/53 tests green.
+- **Fixed** sub-dollar price rounding: stop/target used a flat 2-decimal round,
+  collapsing sub-dollar assets (e.g. BAT ~$0.20) so entry/stop/target printed
+  identical. Added `_round_price()` — scales precision by price magnitude
+  (2/4/6 decimals). 53/53 tests green.
+- **Ran** `mfe_analysis.py` (Mike's max-favorable-excursion research, found
+  untracked) — the last open research question: is there a bigger-move/trend
+  variant worth building instead of the scalp premise? Answer: no. Expectancy
+  gets *worse* with a bigger target (1R: +0.01R, 2R: -0.17R, 3R: -0.34R,
+  n=163 replayed signals). Committed script + results
+  (`mfe_analysis_results.txt`) — final confirmation of the "no durable edge"
+  verdict from an independent angle.
+- **Killed** the Agent 2 HUD for good — unloaded + deleted
+  `com.argus.hud.plist` on both Minis (was frozen/undecided since Jul 19).
+  Scripts left on disk, just not auto-loading.
+- **Closed every parked open decision** as moot (system is shelved, not
+  paused — none of these get revisited):
+  - Guest chat: stays behind `maintenance.flag`, never opened to the public.
+  - Track record feed: stays in preview mode, never went public.
+  - Crypto universe expansion (9→~25 pairs): not pursued.
+  - Weekly trade cap raise: not pursued.
+  - Tier 2 paid model: off the table — no proven track record to sell.
+  - GitHub Pages signal terminal: stays staged + dormant
+    (`ops/deploy_pages.sh`, `ops/com.argus.pages.plist` present, not loaded).
+    Built and tested but never launched — a deliberate decision, not an
+    oversight, documented here for the retrospective.
+
 ## 2026-07-19 (night) — Two-Mini architecture: Agent 2 becomes guardian + fortification
 
 Mike's design call: Agent 1 runs all processes, Agent 2 supervises and backs up.

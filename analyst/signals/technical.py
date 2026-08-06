@@ -4,6 +4,18 @@ Shared by the broadcast engine and the signal scanner.
 """
 
 
+def _round_price(value: float, price: float) -> float:
+    """Round to a precision that keeps stop/target distinct from price and
+    from each other for sub-dollar assets. A flat 2-decimal round collapses
+    e.g. BAT (~$0.20, ATR ~$0.004) so entry/stop/target all print identical.
+    """
+    if price >= 1:
+        return round(value, 2)
+    if price >= 0.1:
+        return round(value, 4)
+    return round(value, 6)
+
+
 def score_snapshot(snap: dict) -> dict:
     price = snap.get("price", 0)
     if not price or price <= 0:
@@ -59,18 +71,18 @@ def score_snapshot(snap: dict) -> dict:
     if buy_ok:
         action = "BUY"
         conf = round(min(0.50 + buy_score, 0.82), 2)
-        stop_loss = round(price - (1.0 * atr), 2)
-        price_target = round(price + (1.0 * atr), 2)
+        stop_loss = _round_price(price - (1.0 * atr), price)
+        price_target = _round_price(price + (1.0 * atr), price)
     elif sell_ok:
         action = "SELL"
         conf = round(min(0.50 + sell_score, 0.82), 2)
-        stop_loss = round(price + (1.0 * atr), 2)
-        price_target = round(price - (1.0 * atr), 2)
+        stop_loss = _round_price(price + (1.0 * atr), price)
+        price_target = _round_price(price - (1.0 * atr), price)
     else:
         action = "WATCH"
         conf = round(min(0.50 + max(buy_score, sell_score), 0.65), 2)
-        stop_loss = round(price - (0.75 * atr), 2)
-        price_target = round(price + (0.75 * atr), 2)
+        stop_loss = _round_price(price - (0.75 * atr), price)
+        price_target = _round_price(price + (0.75 * atr), price)
 
     risk = abs(price - stop_loss)
     reward = abs(price_target - price)

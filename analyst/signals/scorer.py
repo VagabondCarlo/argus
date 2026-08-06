@@ -189,8 +189,6 @@ def run_scan(full_universe: bool = False) -> list[dict]:
             veto = "no volume confirmation"
         elif action == "SELL" and rsi < 30:
             veto = "oversold RSI"
-        elif action in ("BUY", "SELL") and risk_reward < 2.0:
-            veto = f"R/R {risk_reward:.1f} below 2.0 minimum"
         elif action in ("BUY", "SELL") and confidence < 0.65:
             veto = f"confidence {confidence:.0%} below 65% floor"
         elif action == "WATCH" and confidence < 0.62:

@@ -392,6 +392,17 @@
     body { background: white; color: black; }
     .doc { padding: 0; }
   }
+
+  .lead-statement { margin-bottom: 64px; }
+  .lead-statement p {
+    font-size: 21px;
+    font-style: italic;
+    color: var(--muted);
+    line-height: 1.55;
+    max-width: 58ch;
+    text-wrap: balance;
+    margin-bottom: 0;
+  }
 </style>
 
 <div class="doc">
@@ -430,13 +441,20 @@
   </header>
 
 
-  <!-- ── EXECUTIVE SUMMARY ──────────────────────────────────── -->
+  <!-- ── LEAD STATEMENT ──────────────────────────────────────── -->
+  <div class="lead-statement">
+    <p>In building a trading assistant, we learned valuable lessons about running a fully automated system safely — how to make it recover from its own failures, protect itself with hard limits on how much it could lose, and prove its results with real data instead of guesswork. But we ultimately found the tool is unable to reliably pick trades that make money in markets this closely watched by everyone else.</p>
+  </div>
+
+
+  <!-- ── WHAT ARGUS WAS ─────────────────────────────────────── -->
   <section class="section">
     <div class="section-label">Overview</div>
-    <div class="section-title">What Argus v2 Was</div>
-    <p>Argus v1 retired on July 7, 2026 with a diagnosis, not a verdict: the architecture was sound, but a position-sizing bug and a broken execution loop meant the strategy itself was never really tested. v2 was built to answer the question v1 never got to ask — <em>does this trading premise actually have an edge?</em></p>
-    <p>The rebuild kept the three-service architecture but replaced almost everything else: software-enforced stops (the broker gives crypto and fractional stock positions no protection of their own), a two-book model that scored every signal — traded or not — against real prices for calibration, and a second Mac Mini that stood guard over the first. The goal was a system that could run itself well enough that the only remaining question was the strategy, not the plumbing.</p>
-    <p>It ran for 21 days and answered the question. The engineering held. The edge did not materialize. This is the honest account of both.</p>
+    <div class="section-title">What Argus Was</div>
+    <p>The goal was simple: build a computer program that watches the stock and cryptocurrency markets, decides on its own when to buy and when to sell, and makes money doing it — without a person making each decision. It would run by itself, all day and all night, and only tell a person what it did after the fact.</p>
+    <p>Argus v1 tried this first and ran into problems before the real idea could even be tested: a bug made it buy far more than it should have, and then a separate bug made it stop trading almost immediately — it stayed stopped for three weeks without anyone noticing. v2 was a rebuild meant to fix those problems so the real question could finally get a fair test: <em>can a program like this actually find trades that make money?</em></p>
+    <p>The rebuild kept the same three-part design but replaced almost everything else: the program protected its own trades in software instead of trusting the broker to do it, it kept score on trades it chose not to make so we could tell later if being pickier would have helped, and a second computer watched the first one and could fix it automatically if it broke.</p>
+    <p>It ran for 21 days. The engineering worked — it kept itself running, protected its own money, and recovered from its own failures without anyone stepping in. The trading did not make real money. This is the honest account of both.</p>
   </section>
 
 

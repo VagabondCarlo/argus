@@ -8,6 +8,18 @@ Built as a functional portfolio piece demonstrating applied AI, distributed syst
 
 ---
 
+## How I built this
+
+I built Argus with AI from start to finish. **106 of the 121 commits in this repo are co-authored with Claude** (Anthropic's AI coding agent).
+
+- **My part:** the idea, the trading rules and risk limits, the hardware (two Mac Minis, one for production and one for testing), and every call on what to ship, what to fix, and when to shut it down.
+- **Claude's part:** writing the Python services, the FastAPI agents, the Telegram bot, and the tests, and digging through the trade data with me after each trial.
+- **Together:** the v1 post-mortem that found the bug that blocked every trade for 19 days, and the v2 redesign built on that evidence.
+
+I wrote [CLAUDE.md](CLAUDE.md) as the rulebook the AI works under: test every change before moving on, never touch security settings without a way to roll back, protect capital above everything, and do only what was asked. Running an AI agent like a teammate, with clear rules and real accountability, is a big part of what this project shows.
+
+---
+
 ## Version 2 — Current
 
 **`main` is Argus v2.** Version 1 ran a 22-day live trial (June 16 – July 7, 2026), analyzed 2,559 signals, and was retired to build a sharper system on what the data proved. The v1 codebase is frozen at [`v1-archive`](../../tree/v1-archive) / tag [`v1.0-final`](../../releases/tag/v1.0-final) — see the [full diff](../../compare/v1.0-final...main).
@@ -379,6 +391,6 @@ The free channel levels the playing field. The paid channel funds the infrastruc
 ---
 
 *Built by Michael Carlo — CySA+ candidate, AI systems builder*  
-*Vibe coded with Claude*  
+*Built through AI-assisted development with Claude*  
 *Paper trading minimum 30 days before live capital deployment*  
 *Version history: [docs/changelog/](docs/changelog/)*
